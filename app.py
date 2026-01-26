@@ -200,9 +200,16 @@ simrs[["kode_anggaran", "kode_pengendali"]] = simrs["kode_ma"].apply(
 )
 simrs["pengendali"] = simrs["kode_pengendali"].map(PENGENDALI_MAP)
 
+simrs["bulan"] = simrs["tanggal"].dt.to_period("M").astype(str)
+
 # =============================
-# HITUNG REALISASI
+# HITUNG REALISASI (DENGAN FILTER BULAN)
 # =============================
+simrs_f = simrs.copy()
+
+if "f_bulan" in locals() and f_bulan:
+    simrs_f = simrs_f[simrs_f["bulan"].isin(f_bulan)]
+
 realisasi = (
     simrs.groupby("key", as_index=False)["nilai"]
     .sum()
@@ -223,6 +230,16 @@ tab1, tab2 = st.tabs(["📊 Realisasi Anggaran", "📄 Laporan SIMRS"])
 # TAB 1 – REALISASI ANGGARAN
 # ======================================================
 with tab1:
+    st.subheader("🔎 Filter Realisasi Anggaran")
+
+    daftar_bulan = sorted(simrs["bulan"].dropna().unique())
+
+    f_bulan = st.multiselect(
+        "Pilih Bulan Realisasi",
+        daftar_bulan,
+        default=daftar_bulan
+    )
+
     tampil = lap.copy()
     tampil["pagu"] = tampil["pagu"].apply(format_rp)
     tampil["capaian"] = tampil["capaian"].apply(format_rp)
