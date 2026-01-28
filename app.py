@@ -138,14 +138,14 @@ def ekstrak_kode_simrs(text):
 # =============================
 def export_excel_realisasi(df):
     buffer = BytesIO()
-    with pd.ExcelWriter(buffer) as writer:
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df.to_excel(writer, sheet_name="Realisasi_Anggaran", index=False)
     buffer.seek(0)
     return buffer
 
 def export_excel_simrs(df):
     buffer = BytesIO()
-    with pd.ExcelWriter(buffer) as writer:
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df.to_excel(writer, sheet_name="Laporan_SIMRS", index=False)
     buffer.seek(0)
     return buffer
@@ -203,11 +203,17 @@ simrs["pengendali"] = simrs["kode_pengendali"].map(PENGENDALI_MAP)
 simrs["bulan"] = simrs["tanggal"].dt.to_period("M").astype(str)
 
 # =============================
+# FILTER BULAN (DEFAULT SEMUA)
+# =============================
+daftar_bulan = sorted(simrs["bulan"].dropna().unique())
+f_bulan = daftar_bulan  # default semua bulan
+
+# =============================
 # HITUNG REALISASI (DENGAN FILTER BULAN)
 # =============================
 simrs_f = simrs.copy()
 
-if "f_bulan" in locals() and f_bulan:
+if f_bulan:
     simrs_f = simrs_f[simrs_f["bulan"].isin(f_bulan)]
 
 realisasi = (
@@ -240,7 +246,21 @@ with tab1:
         default=daftar_bulan
     )
 
-    tampil = lap.copy()
+    daftar_pengendali = sorted(lap["pengendali"].dropna().unique())
+
+    f_pengendali_realisasi = st.multiselect(
+    "Pilih Pengendali",
+    daftar_pengendali,
+    default=daftar_pengendali
+    )
+
+    lap_f = lap.copy()
+
+    # filter pengendali
+    if f_pengendali_realisasi:
+        lap_f = lap_f[lap_f["pengendali"].isin(f_pengendali_realisasi)]
+
+    tampil = lap_f.copy()
     tampil["pagu"] = tampil["pagu"].apply(format_rp)
     tampil["capaian"] = tampil["capaian"].apply(format_rp)
     tampil["sisa"] = tampil["sisa"].apply(format_rp)
@@ -253,13 +273,14 @@ with tab1:
 
     st.download_button(
         "⬇️ Download Excel Realisasi Anggaran",
-        data=export_excel_realisasi(tampil),
+        data=export_excel_realisasi(lap_f
+        ),
         file_name="realisasi_anggaran.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
     grafik = (
-        lap.groupby("pengendali", as_index=False)
+        lap_f.groupby("pengendali", as_index=False)
         .agg({"capaian": "sum", "pagu": "sum"})
     )
 
@@ -278,7 +299,7 @@ with tab1:
     st.altair_chart(chart, use_container_width=True)
 
     rekap = (
-    lap.groupby("pengendali", as_index=False)
+    lap_f.groupby("pengendali", as_index=False)
     .agg(
         pagu=("pagu", "sum"),
         capaian=("capaian", "sum")
@@ -376,7 +397,7 @@ with tab2:
 
     st.download_button(
         "⬇️ Download Excel Laporan SIMRS",
-        data=export_excel_simrs(data_tampil),
+        data=export_excel_simrs(data),
         file_name="laporan_simrs.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
