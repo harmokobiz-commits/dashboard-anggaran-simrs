@@ -244,6 +244,16 @@ simrs["pengendali"] = simrs["kode_pengendali"].map(PENGENDALI_MAP)
 simrs["bulan"] = simrs["tanggal"].dt.to_period("M").astype(str)
 
 # =============================
+# INFO UPDATE DATA (DARI ISI FILE)
+# =============================
+last_update_simrs = simrs["tanggal"].max()
+
+if pd.notna(last_update_simrs):
+    info_update = last_update_simrs.strftime("%d %B %Y")
+else:
+    info_update = "Tanggal tidak tersedia"
+
+# =============================
 # FILTER BULAN (DEFAULT SEMUA)
 # =============================
 daftar_bulan = sorted(simrs["bulan"].dropna().unique())
@@ -293,6 +303,12 @@ with tab1:
     "Pilih Pengendali",
     daftar_pengendali,
     default=daftar_pengendali
+    )
+
+    sumber = "Google Drive" if st.session_state.data_source == "drive" else "Upload Manual"
+
+    st.caption(
+    f"📅 Data ({sumber}) terakhir diperbarui: **{info_update}**"
     )
 
     lap_f = lap.copy()
