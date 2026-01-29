@@ -45,6 +45,26 @@ if st.sidebar.button("🔄 Reset ke Data Google Drive"):
     st.session_state.data_source = "drive"
     st.rerun()    
 
+with st.sidebar.expander("📥 Upload Data Manual (Opsional)", expanded=False):
+
+    ma_file = st.file_uploader(
+        "📘 Upload MA SMART",
+        type=["xlsx"],
+        key="upload_ma"
+    )
+
+    simrs_file = st.file_uploader(
+        "📙 Upload SIMRS",
+        type=["xlsx"],
+        key="upload_simrs"
+    )
+
+    if ma_file is not None and simrs_file is not None:
+        st.session_state.ma_raw = pd.read_excel(ma_file)
+        st.session_state.simrs_raw = pd.read_excel(simrs_file)
+        st.session_state.data_source = "upload"
+        st.success("✅ Data manual berhasil digunakan")    
+
 with st.sidebar.expander("ℹ️ About Aplikasi"):
     st.markdown("""
     **Dashboard Anggaran SIMRS**
@@ -185,20 +205,6 @@ if st.session_state.data_source == "drive" and st.session_state.ma_raw is None:
     except Exception as e:
         st.error("❌ Gagal memuat data dari Google Drive")
         st.stop()
-
-# =============================
-# UPLOAD FILE (OPSIONAL)
-# =============================
-st.subheader("📥 Upload Manual (Opsional)")
-
-ma_file = st.file_uploader("📘 Upload MA SMART", type=["xlsx"])
-simrs_file = st.file_uploader("📙 Upload SIMRS", type=["xlsx"])
-
-if ma_file and simrs_file:
-    st.session_state.ma_raw = pd.read_excel(ma_file)
-    st.session_state.simrs_raw = pd.read_excel(simrs_file)
-    st.session_state.data_source = "upload"
-    st.success("✅ Data manual berhasil digunakan")
 
 # =============================
 # BACA MA SMART
