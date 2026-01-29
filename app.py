@@ -39,6 +39,12 @@ if st.sidebar.button("🚪 Logout"):
     st.session_state.login = False
     st.rerun()
 
+if st.sidebar.button("🔄 Reset ke Data Google Drive"):
+    st.session_state.ma_raw = None
+    st.session_state.simrs_raw = None
+    st.session_state.data_source = "drive"
+    st.rerun()    
+
 with st.sidebar.expander("ℹ️ About Aplikasi"):
     st.markdown("""
     **Dashboard Anggaran SIMRS**
@@ -62,6 +68,18 @@ with st.sidebar.expander("ℹ️ About Aplikasi"):
     """)
 
 # =============================
+# SESSION STATE DATA
+# =============================
+if "ma_raw" not in st.session_state:
+    st.session_state.ma_raw = None
+
+if "simrs_raw" not in st.session_state:
+    st.session_state.simrs_raw = None
+
+if "data_source" not in st.session_state:
+    st.session_state.data_source = "drive"  # drive | upload
+
+# =============================
 # REFERENSI PENGENDALI
 # =============================
 PENGENDALI_MAP = {
@@ -74,6 +92,12 @@ PENGENDALI_MAP = {
     "7": "TIM KERJA PENDIDIKAN & PELATIHAN",
     "8": "INSTALASI PEMASARAN & PENGEMBANGAN BISNIS",
 }
+
+# =============================
+# DEFAULT DATA GOOGLE DRIVE
+# =============================
+MA_DRIVE_URL = "https://docs.google.com/spreadsheets/d/15StwZUyvQ7jhkVE97sL6tSO5z3UPXk0-/export?format=xlsx"
+SIMRS_DRIVE_URL = "https://docs.google.com/spreadsheets/d/1dS9ukqE-epEapvaAySZEuyyhYkZsBsxF/export?format=xlsx"
 
 # =============================
 # UTIL
@@ -151,18 +175,35 @@ def export_excel_simrs(df):
     return buffer
 
 # =============================
-# UPLOAD FILE
+# LOAD DATA DEFAULT (GOOGLE DRIVE)
 # =============================
+if st.session_state.data_source == "drive" and st.session_state.ma_raw is None:
+    try:
+        st.session_state.ma_raw = pd.read_excel(MA_DRIVE_URL)
+        st.session_state.simrs_raw = pd.read_excel(SIMRS_DRIVE_URL)
+        st.success("📂 Data default dimuat dari Google Drive")
+    except Exception as e:
+        st.error("❌ Gagal memuat data dari Google Drive")
+        st.stop()
+
+# =============================
+# UPLOAD FILE (OPSIONAL)
+# =============================
+st.subheader("📥 Upload Manual (Opsional)")
+
 ma_file = st.file_uploader("📘 Upload MA SMART", type=["xlsx"])
 simrs_file = st.file_uploader("📙 Upload SIMRS", type=["xlsx"])
 
-if not ma_file or not simrs_file:
-    st.stop()
+if ma_file and simrs_file:
+    st.session_state.ma_raw = pd.read_excel(ma_file)
+    st.session_state.simrs_raw = pd.read_excel(simrs_file)
+    st.session_state.data_source = "upload"
+    st.success("✅ Data manual berhasil digunakan")
 
 # =============================
 # BACA MA SMART
 # =============================
-ma_raw = pd.read_excel(ma_file)
+ma_raw = st.session_state.ma_raw
 
 ma = pd.DataFrame({
     "kode_dana": ma_raw.iloc[:, 2],
@@ -182,7 +223,7 @@ ma = ma.dropna(subset=["kode_anggaran", "kode_pengendali"])
 # =============================
 # BACA SIMRS
 # =============================
-simrs_raw = pd.read_excel(simrs_file)
+simrs_raw = st.session_state.simrs_raw
 
 simrs = pd.DataFrame({
     "kepada": simrs_raw.iloc[:, 0],
@@ -217,7 +258,7 @@ if f_bulan:
     simrs_f = simrs_f[simrs_f["bulan"].isin(f_bulan)]
 
 realisasi = (
-    simrs.groupby("key", as_index=False)["nilai"]
+    simrs_f.groupby("key", as_index=False)["nilai"]
     .sum()
     .rename(columns={"nilai": "capaian"})
 )
@@ -271,9 +312,13 @@ with tab1:
         use_container_width=True
     )
 
+    st.caption(
+    f"📅 Bulan dipilih: {', '.join(f_bulan)} | "
+    f"👥 Pengendali: {', '.join(f_pengendali_realisasi)}" )
+
     st.download_button(
         "⬇️ Download Excel Realisasi Anggaran",
-        data=export_excel_realisasi(lap_f
+        data=export_excel_realisasi(tampil
         ),
         file_name="realisasi_anggaran.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
