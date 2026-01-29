@@ -268,13 +268,17 @@ if f_bulan:
     simrs_f = simrs_f[simrs_f["bulan"].isin(f_bulan)]
 
 realisasi = (
-    simrs_f.groupby("key", as_index=False)["nilai"]
-    .sum()
-    .rename(columns={"nilai": "capaian"})
+    simrs_f
+    .groupby("key", as_index=False)
+    .agg(
+        capaian=("nilai", "sum"),
+        jumlah_transaksi=("nilai", "count")
+    )
 )
 
 lap = ma.merge(realisasi, on="key", how="left")
 lap["capaian"] = lap["capaian"].fillna(0)
+lap["jumlah_transaksi"] = lap["jumlah_transaksi"].fillna(0).astype(int)
 lap["sisa"] = lap["pagu"] - lap["capaian"]
 lap["persen"] = (lap["capaian"] / lap["pagu"]).fillna(0) * 100
 
@@ -318,10 +322,25 @@ with tab1:
         lap_f = lap_f[lap_f["pengendali"].isin(f_pengendali_realisasi)]
 
     tampil = lap_f.copy()
+    tampil["jumlah_transaksi"] = tampil["jumlah_transaksi"]
     tampil["pagu"] = tampil["pagu"].apply(format_rp)
     tampil["capaian"] = tampil["capaian"].apply(format_rp)
     tampil["sisa"] = tampil["sisa"].apply(format_rp)
     tampil["persen"] = tampil["persen"].apply(lambda x: f"{x:.2f}%")
+
+    tampil = tampil[
+    [
+        "kode_dana",
+        "kode_ma",
+        "uraian",
+        "pagu",
+        "capaian",
+        "jumlah_transaksi",
+        "sisa",
+        "persen",
+        "pengendali"
+    ]
+]
 
     st.dataframe(
         tampil.style.applymap(warna_persen, subset=["persen"]),
