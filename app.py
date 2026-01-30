@@ -278,7 +278,7 @@ realisasi = (
     .groupby("key", as_index=False)
     .agg(
         capaian=("nilai", "sum"),
-        jumlah_transaksi=("nilai", "count")
+        jumlah_transaksi=("nilai", lambda x: (x > 0).sum())
     )
 )
 
@@ -447,7 +447,7 @@ with tab2:
     f_kode_anggaran = st.multiselect(
     "Kode Anggaran",
     sorted(simrs["kode_anggaran"].dropna().unique())
-)
+    )
     
     min_tgl = simrs["tanggal"].min()
     max_tgl = simrs["tanggal"].max()
@@ -489,4 +489,17 @@ with tab2:
     )
 
     total = data["nilai"].sum()
-    st.metric("💰 Total Nilai", f"Rp {format_rp(total)}")
+    jumlah_dokumen = (data["nilai"] > 0).sum()
+    jumlah_batal = (data["nilai"] == 0).sum()    
+    
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric("💰 Total Nilai", f"Rp {format_rp(total)}")
+
+    with col2:
+        st.metric("📄 Jumlah Dokumen", f"{jumlah_dokumen}")
+
+    with col2:
+        st.metric("❌ Dokumen Batal", jumlah_batal)    
+        
