@@ -353,6 +353,51 @@ with tab1:
         use_container_width=True
     )
 
+    st.markdown("---")
+    st.subheader("🔍 Detail Transaksi SIMRS")
+
+    opsi_anggaran = (
+        lap_f[lap_f["jumlah_transaksi"] > 0]
+        .sort_values("capaian", ascending=False)
+        ["uraian"]
+        .unique()
+    )
+
+    pilih_uraian = st.selectbox(
+        "Pilih Mata Anggaran",
+        options=["-- Pilih --"] + list(opsi_anggaran)
+    )
+
+    if pilih_uraian != "-- Pilih --":
+        key_terpilih = lap_f.loc[
+            lap_f["uraian"] == pilih_uraian,
+            "key"
+        ].iloc[0]
+
+        detail = simrs[
+            (simrs["key"] == key_terpilih) &
+            (simrs["nilai"] > 0)
+        ]
+
+        total_detail = detail["nilai"].sum()
+        jumlah_dok = len(detail)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("💰 Total Nilai", f"Rp {format_rp(total_detail)}")
+        with col2:
+            st.metric("📄 Jumlah Dokumen", jumlah_dok)
+
+        tampil_detail = detail.copy()
+        tampil_detail["nilai"] = tampil_detail["nilai"].apply(format_rp)
+
+        st.dataframe(
+            tampil_detail[
+            ["tanggal", "no_transaksi", "nama_anggaran", "nilai", "kepada"]
+            ],
+            use_container_width=True
+        )
+
     st.caption(
     f"📅 Bulan dipilih: {', '.join(f_bulan)} | "
     f"👥 Pengendali: {', '.join(f_pengendali_realisasi)}" )
