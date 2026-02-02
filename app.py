@@ -321,7 +321,28 @@ with tab1:
     f"📅 Data ({sumber}) terakhir diperbarui: **{info_update}**"
     )
 
-    lap_f = lap.copy()
+# =============================
+# HITUNG ULANG REALISASI SESUAI FILTER BULAN
+# =============================
+    simrs_bulan = simrs.copy()
+
+    if f_bulan:
+        simrs_bulan = simrs_bulan[simrs_bulan["bulan"].isin(f_bulan)]
+
+    realisasi_bulan = (
+        simrs_bulan
+        .groupby("key", as_index=False)
+        .agg(
+            capaian=("nilai", "sum"),
+            jumlah_transaksi=("nilai", lambda x: (x > 0).sum())
+        )
+    )
+
+    lap_f = ma.merge(realisasi_bulan, on="key", how="left")
+    lap_f["capaian"] = lap_f["capaian"].fillna(0)
+    lap_f["jumlah_transaksi"] = lap_f["jumlah_transaksi"].fillna(0).astype(int)
+    lap_f["sisa"] = lap_f["pagu"] - lap_f["capaian"]
+    lap_f["persen"] = (lap_f["capaian"] / lap_f["pagu"]).fillna(0) * 100
 
     # filter pengendali
     if f_pengendali_realisasi:
