@@ -11,6 +11,13 @@ from google.oauth2.service_account import Credentials
 # KONFIGURASI AWAL
 # =============================
 st.set_page_config(page_title="Dashboard Anggaran SIMRS", layout="wide")
+
+# =============================
+# SESSION STATE UNTUK TAB
+# =============================
+if "active_tab" not in st.session_state:
+    st.session_state.active_tab = "tab1"
+
 st.title("📊 Dashboard Anggaran SIMRS")
 
 # =============================
@@ -325,13 +332,15 @@ else:
     info_update = "Tanggal tidak tersedia"
 
 # =============================
-# TAB NAVIGASI
+# TAB NAVIGASI DENGAN SESSION STATE
 # =============================
-tab1, tab2, tab3 = st.tabs([
-    "📊 Realisasi Anggaran",
-    "📄 Laporan SIMRS",
-    "⚠️ Dokumen Bermasalah"
-])
+tab_names = ["📊 Realisasi Anggaran", "📄 Laporan SIMRS", "⚠️ Dokumen Bermasalah"]
+tab1, tab2, tab3 = st.tabs(tab_names)
+
+# Deteksi tab yang aktif
+for idx, tab_obj in enumerate([tab1, tab2, tab3]):
+    if tab_obj._is_active:
+        st.session_state.active_tab = f"tab{idx+1}"
 
 # ======================================================
 # TAB 1 – REALISASI ANGGARAN
@@ -345,7 +354,8 @@ with tab1:
     f_bulan = st.multiselect(
         "Pilih Bulan Realisasi",
         daftar_bulan,
-        default=daftar_bulan
+        default=daftar_bulan,
+        key="filter_bulan_tab1"
     )
 
     # Filter Pengendali
@@ -354,14 +364,12 @@ with tab1:
     f_pengendali_realisasi = st.multiselect(
         "Pilih Pengendali",
         daftar_pengendali,
-        default=daftar_pengendali
+        default=daftar_pengendali,
+        key="filter_pengendali_tab1"
     )
 
-    # Info sumber data
-    sumber = "Google Drive" if st.session_state.data_source == "drive" else "Upload Manual"
-
     st.caption(
-        f"📅 Data ({sumber}) terakhir diperbarui: **{info_update}**"
+        f"📅 Data terakhir diperbarui: **{info_update}**"
     )
 
     # =============================
@@ -429,7 +437,8 @@ with tab1:
 
     pilih_uraian = st.selectbox(
         "Pilih Mata Anggaran",
-        options=["-- Pilih --"] + list(opsi_anggaran)
+        options=["-- Pilih --"] + list(opsi_anggaran),
+        key="select_uraian_tab1"
     )
 
     if pilih_uraian != "-- Pilih --":
@@ -475,7 +484,8 @@ with tab1:
         "⬇️ Download Excel Realisasi Anggaran",
         data=export_excel_single(tampil, "Realisasi_Anggaran"),
         file_name="realisasi_anggaran.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="download_realisasi_tab1"
     )
 
     # =============================
@@ -540,7 +550,8 @@ with tab1:
             "Rekap Pengendali": rekap_tampil
         }),
         file_name="Realisasi_Anggaran_SIMRS.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="download_rekap_tab1"
     )
 
 # ======================================================
@@ -551,22 +562,26 @@ with tab2:
 
     f_kepada = st.multiselect(
         "Perusahaan / Kepada",
-        sorted(simrs["kepada"].dropna().unique())
+        sorted(simrs["kepada"].dropna().unique()),
+        key="filter_kepada_tab2"
     )
 
     f_anggaran = st.multiselect(
         "Nama Anggaran",
-        sorted(simrs["nama_anggaran"].dropna().unique())
+        sorted(simrs["nama_anggaran"].dropna().unique()),
+        key="filter_anggaran_tab2"
     )
 
     f_pengendali = st.multiselect(
         "Pengendali",
-        sorted(simrs["pengendali"].dropna().unique())
+        sorted(simrs["pengendali"].dropna().unique()),
+        key="filter_pengendali_tab2"
     )
 
     f_kode_anggaran = st.multiselect(
         "Kode Anggaran",
-        sorted(simrs["kode_anggaran"].dropna().unique())
+        sorted(simrs["kode_anggaran"].dropna().unique()),
+        key="filter_kode_tab2"
     )
     
     min_tgl = simrs["tanggal"].min()
@@ -575,7 +590,8 @@ with tab2:
     if pd.notna(min_tgl) and pd.notna(max_tgl):
         f_tgl = st.date_input(
             "Rentang Tanggal",
-            [min_tgl.date(), max_tgl.date()]
+            [min_tgl.date(), max_tgl.date()],
+            key="filter_tanggal_tab2"
         )
     else:
         f_tgl = None
@@ -608,7 +624,8 @@ with tab2:
         "⬇️ Download Excel Laporan SIMRS",
         data=export_excel_single(data, "Laporan_SIMRS"),
         file_name="laporan_simrs.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="download_laporan_tab2"
     )
 
     # =============================
@@ -690,9 +707,8 @@ with tab3:
                     # Simpan ke Google Drive
                     if simpan_dokumen_bermasalah(df_all):
                         st.success("✅ Data berhasil disimpan ke Google Drive")
-                        st.rerun()
-                    else:
-                        st.error("❌ Gagal menyimpan data. Silakan coba lagi.")
+                        st.balloons()
+                        # Tidak pakai st.rerun() agar tetap di Tab 3
 
     st.markdown("---")
     st.subheader("📋 Daftar Dokumen Bermasalah")
@@ -700,7 +716,7 @@ with tab3:
     # Tombol refresh manual
     col_btn1, col_btn2 = st.columns([1, 5])
     with col_btn1:
-        if st.button("🔄 Refresh"):
+        if st.button("🔄 Refresh", key="refresh_tab3"):
             st.rerun()
 
     # =============================
@@ -716,7 +732,7 @@ with tab3:
             
             # Jika DataFrame kosong atau tidak punya kolom yang benar, inisialisasi
             if df_verif.empty or not all(col in df_verif.columns for col in required_columns):
-                df_verif = pd.DataFrame(columns=required_columns)
+                df_verif = pd.DataFrame(columns=required_columns + ['tanggal_input'])
                 
     except Exception as e:
         st.warning(f"⚠️ Tidak bisa membaca data dari Google Drive: {e}")
@@ -735,7 +751,8 @@ with tab3:
             "⬇️ Download Excel Dokumen Bermasalah",
             data=export_excel_single(df_verif, "Dokumen_Bermasalah"),
             file_name="dokumen_bermasalah.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_dokumen_tab3"
         )
 
         # =============================
@@ -747,6 +764,9 @@ with tab3:
         df_verif["tanggal_verifikasi"] = pd.to_datetime(
             df_verif["tanggal_verifikasi"], errors="coerce"
         )
+        
+        # Drop rows dengan tanggal invalid
+        df_verif = df_verif.dropna(subset=["tanggal_verifikasi"])
 
         col1, col2, col3, col4 = st.columns(4)
 
@@ -755,11 +775,14 @@ with tab3:
             max_tgl = df_verif["tanggal_verifikasi"].max()
 
             if pd.notna(min_tgl) and pd.notna(max_tgl):
-                f_tgl = st.date_input(
-                    "📅 Rentang Tanggal",
-                    [min_tgl.date(), max_tgl.date()],
-                    key="filter_tgl_verif"
-                )
+                try:
+                    f_tgl = st.date_input(
+                        "📅 Rentang Tanggal",
+                        [min_tgl.date(), max_tgl.date()],
+                        key="filter_tgl_verif_tab3"
+                    )
+                except:
+                    f_tgl = None
             else:
                 f_tgl = None
 
@@ -768,11 +791,12 @@ with tab3:
             f_perusahaan = st.multiselect(
                 "🏢 Perusahaan",
                 sorted(unique_perusahaan) if unique_perusahaan else [],
-                help="Kosongkan untuk tampilkan semua"
+                help="Kosongkan untuk tampilkan semua",
+                key="filter_perusahaan_tab3"
             )
 
         with col3:
-            f_no = st.text_input("📄 Cari No. Dokumen", help="Ketik sebagian nomor dokumen")
+            f_no = st.text_input("📄 Cari No. Dokumen", help="Ketik sebagian nomor dokumen", key="filter_no_tab3")
 
         with col4:
             # Default filter: tampilkan SEMUA status
@@ -780,7 +804,8 @@ with tab3:
                 "📌 Status",
                 ["BELUM", "SELESAI"],
                 default=["BELUM", "SELESAI"],
-                help="Pilih status yang ingin ditampilkan"
+                help="Pilih status yang ingin ditampilkan",
+                key="filter_status_tab3"
             )
 
         # =============================
@@ -812,12 +837,13 @@ with tab3:
             data = data[data["status"].isin(f_status)]
 
         # =============================
-        # EDIT STATUS & HAPUS DATA
+        # EDIT/UPDATE/HAPUS DATA
         # =============================
-        st.markdown("### ✏️ Edit Status atau Hapus Data")
+        st.markdown("---")
+        st.markdown("### ✏️ Edit, Update Status, atau Hapus Data")
         
         if not data.empty:
-            # Pilih dokumen untuk edit/hapus
+            # Pilih dokumen untuk edit/update/hapus
             opsi_dokumen = data.apply(
                 lambda row: f"[{row['no_dokumen']}] {row['perusahaan']} - {row['status']}", 
                 axis=1
@@ -829,7 +855,7 @@ with tab3:
                 selected_doc = st.selectbox(
                     "Pilih Dokumen:",
                     options=["-- Pilih Dokumen --"] + opsi_dokumen,
-                    key="select_doc_edit"
+                    key="select_doc_edit_tab3"
                 )
             
             if selected_doc != "-- Pilih Dokumen --":
@@ -843,15 +869,78 @@ with tab3:
                     st.write("")  # Spacing
                     action_type = st.radio(
                         "Aksi:",
-                        ["Ubah Status", "Hapus Data"],
-                        horizontal=True,
-                        key="action_radio"
+                        ["Edit Data Lengkap", "Ubah Status", "Hapus Data"],
+                        horizontal=False,
+                        key="action_radio_tab3"
                     )
                 
                 st.markdown("---")
                 
+                # AKSI: EDIT DATA LENGKAP
+                if action_type == "Edit Data Lengkap":
+                    st.info(f"📝 **Edit Data Dokumen:** {selected_row['no_dokumen']}")
+                    
+                    with st.form("form_edit_dokumen", clear_on_submit=False):
+                        col_edit1, col_edit2 = st.columns(2)
+                        
+                        with col_edit1:
+                            edit_tgl = st.date_input(
+                                "📅 Tanggal Verifikasi",
+                                value=pd.to_datetime(selected_row['tanggal_verifikasi']).date()
+                            )
+                            edit_perusahaan = st.text_input(
+                                "🏢 Nama Perusahaan",
+                                value=selected_row['perusahaan']
+                            )
+                            edit_no_dokumen = st.text_input(
+                                "📄 No. Dokumen",
+                                value=selected_row['no_dokumen']
+                            )
+                        
+                        with col_edit2:
+                            edit_nilai = st.number_input(
+                                "💰 Nilai Tagihan",
+                                value=float(selected_row['nilai']),
+                                min_value=0.0,
+                                step=1000.0
+                            )
+                            edit_status = st.selectbox(
+                                "📌 Status",
+                                ["BELUM", "SELESAI"],
+                                index=0 if selected_row['status'] == "BELUM" else 1
+                            )
+                        
+                        edit_keterangan = st.text_area(
+                            "📝 Keterangan Tagihan",
+                            value=selected_row['keterangan']
+                        )
+                        edit_masalah = st.text_area(
+                            "❌ Masalah / Kesalahan Dokumen",
+                            value=selected_row['masalah']
+                        )
+                        
+                        submit_edit = st.form_submit_button("💾 Simpan Perubahan")
+                        
+                        if submit_edit:
+                            # Update data di DataFrame
+                            df_verif.loc[doc_id, 'tanggal_verifikasi'] = edit_tgl
+                            df_verif.loc[doc_id, 'perusahaan'] = edit_perusahaan
+                            df_verif.loc[doc_id, 'keterangan'] = edit_keterangan
+                            df_verif.loc[doc_id, 'no_dokumen'] = edit_no_dokumen
+                            df_verif.loc[doc_id, 'nilai'] = edit_nilai
+                            df_verif.loc[doc_id, 'masalah'] = edit_masalah
+                            df_verif.loc[doc_id, 'status'] = edit_status
+                            
+                            # Simpan ke Google Drive
+                            if simpan_dokumen_bermasalah(df_verif):
+                                st.success("✅ Data berhasil diupdate!")
+                                st.balloons()
+                                # Tidak pakai st.rerun()
+                            else:
+                                st.error("❌ Gagal menyimpan perubahan")
+                
                 # AKSI: UBAH STATUS
-                if action_type == "Ubah Status":
+                elif action_type == "Ubah Status":
                     st.info(f"📄 **Dokumen:** {selected_row['no_dokumen']} | **Perusahaan:** {selected_row['perusahaan']}")
                     st.warning(f"⚠️ **Status Saat Ini:** {selected_row['status']}")
                     
@@ -862,12 +951,12 @@ with tab3:
                             "Ubah Status Menjadi:",
                             ["BELUM", "SELESAI"],
                             index=0 if selected_row['status'] == "BELUM" else 1,
-                            key="new_status_select"
+                            key="new_status_select_tab3"
                         )
                     
                     with col_btn:
                         st.write("")  # Spacing
-                        if st.button("💾 Simpan Perubahan", type="primary", key="btn_update_status"):
+                        if st.button("💾 Simpan Perubahan", type="primary", key="btn_update_status_tab3"):
                             # Update status di DataFrame
                             df_verif.loc[doc_id, 'status'] = new_status
                             
@@ -875,7 +964,7 @@ with tab3:
                             if simpan_dokumen_bermasalah(df_verif):
                                 st.success(f"✅ Status berhasil diubah menjadi: **{new_status}**")
                                 st.balloons()
-                                st.rerun()
+                                # Tidak pakai st.rerun()
                             else:
                                 st.error("❌ Gagal menyimpan perubahan")
                 
@@ -891,7 +980,7 @@ with tab3:
                     with col_info2:
                         st.write(f"**Nilai:** Rp {format_rp(float(selected_row['nilai']))}")
                         st.write(f"**Status:** {selected_row['status']}")
-                        st.write(f"**Masalah:** {selected_row['masalah'][:50]}...")
+                        st.write(f"**Masalah:** {str(selected_row['masalah'])[:50]}...")
                     
                     st.markdown("---")
                     
@@ -900,19 +989,19 @@ with tab3:
                     with col_confirm:
                         confirm_text = st.text_input(
                             "Ketik 'HAPUS' untuk konfirmasi:",
-                            key="confirm_delete"
+                            key="confirm_delete_tab3"
                         )
                     
                     with col_delete:
                         st.write("")  # Spacing
-                        if st.button("🗑️ Hapus Data", type="primary", key="btn_delete", disabled=(confirm_text != "HAPUS")):
+                        if st.button("🗑️ Hapus Data", type="primary", key="btn_delete_tab3", disabled=(confirm_text != "HAPUS")):
                             # Hapus data dari DataFrame
                             df_verif = df_verif.drop(doc_id).reset_index(drop=True)
                             
                             # Simpan ke Google Drive
                             if simpan_dokumen_bermasalah(df_verif):
                                 st.success("✅ Data berhasil dihapus!")
-                                st.rerun()
+                                # Tidak pakai st.rerun()
                             else:
                                 st.error("❌ Gagal menghapus data")
         else:
