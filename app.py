@@ -666,14 +666,14 @@ with tab3:
                     st.error("❌ Perusahaan, No. Dokumen, dan Masalah harus diisi!")
                 else:
                     data_baru = pd.DataFrame([{
-                        "tanggal_verifikasi": pd.to_datetime(tgl_verifikasi),
+                        "tanggal_verifikasi": tgl_verifikasi,
                         "perusahaan": perusahaan,
                         "keterangan": keterangan,
                         "no_dokumen": no_dokumen,
                         "nilai": nilai,
                         "masalah": masalah,
                         "status": "SELESAI" if status_selesai else "BELUM",
-                        "tanggal_input": pd.to_datetime(date.today())
+                        "tanggal_input": date.today()
                     }])
 
                     # Load data lama dari Google Drive
