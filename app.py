@@ -332,20 +332,29 @@ else:
     info_update = "Tanggal tidak tersedia"
 
 # =============================
-# TAB NAVIGASI DENGAN SESSION STATE
+# TAB NAVIGASI DENGAN RADIO BUTTON (UNTUK MENJAGA TAB AKTIF)
 # =============================
 tab_names = ["📊 Realisasi Anggaran", "📄 Laporan SIMRS", "⚠️ Dokumen Bermasalah"]
-tab1, tab2, tab3 = st.tabs(tab_names)
+selected_tab = st.radio(
+    "Pilih Tab:",
+    tab_names,
+    index=tab_names.index(st.session_state.active_tab.replace("tab", "").replace("1", tab_names[0]).replace("2", tab_names[1]).replace("3", tab_names[2])),
+    horizontal=True,
+    key="tab_selector"
+)
 
-# Deteksi tab yang aktif
-for idx, tab_obj in enumerate([tab1, tab2, tab3]):
-    if tab_obj._is_active:
-        st.session_state.active_tab = f"tab{idx+1}"
+# Update session state berdasarkan pilihan
+if selected_tab == tab_names[0]:
+    st.session_state.active_tab = "tab1"
+elif selected_tab == tab_names[1]:
+    st.session_state.active_tab = "tab2"
+elif selected_tab == tab_names[2]:
+    st.session_state.active_tab = "tab3"
 
 # ======================================================
 # TAB 1 – REALISASI ANGGARAN
 # ======================================================
-with tab1:
+if st.session_state.active_tab == "tab1":
     st.subheader("🔎 Filter Realisasi Anggaran")
 
     # Filter Bulan
@@ -466,7 +475,7 @@ with tab1:
             st.metric("📄 Jumlah Dokumen", jumlah_dok)
 
         tampil_detail = detail.copy()
-        tampil_detail["nilai"] = tampil_detail["nilai"].apply(format_rp)
+        tampil_detail["nilai"] = tampil_detail["nilai"].apply(format_rp)  # PERBAIKAN: Ini yang benar, bukan "tampil"
 
         st.dataframe(
             tampil_detail[
@@ -557,7 +566,7 @@ with tab1:
 # ======================================================
 # TAB 2 – LAPORAN SIMRS
 # ======================================================
-with tab2:
+if st.session_state.active_tab == "tab2":
     st.subheader("🔎 Filter Laporan SIMRS")
 
     f_kepada = st.multiselect(
@@ -649,7 +658,7 @@ with tab2:
 # ======================================================
 # TAB 3 – DOKUMEN BERMASALAH
 # ======================================================
-with tab3:
+if st.session_state.active_tab == "tab3":
     st.subheader("⚠️ Dokumen / Tagihan Bermasalah")
     
     # =============================
@@ -708,7 +717,8 @@ with tab3:
                     if simpan_dokumen_bermasalah(df_all):
                         st.success("✅ Data berhasil disimpan ke Google Drive")
                         st.balloons()
-                        # Tidak pakai st.rerun() agar tetap di Tab 3
+                        st.cache_data.clear()
+                        st.rerun()
 
     st.markdown("---")
     st.subheader("📋 Daftar Dokumen Bermasalah")
@@ -862,7 +872,12 @@ with tab3:
                 # Ambil index dokumen yang dipilih
                 selected_idx = opsi_dokumen.index(selected_doc)
                 selected_row = data.iloc[selected_idx]
-                doc_id = selected_row['id']
+                
+                # PENTING: Cari index di df_verif original (bukan di data yang sudah di-filter)
+                original_idx = df_verif[
+                    (df_verif['no_dokumen'] == selected_row['no_dokumen']) &
+                    (df_verif['perusahaan'] == selected_row['perusahaan'])
+                ].index[0]
                 
                 with col_action:
                     st.write("")  # Spacing
@@ -923,19 +938,20 @@ with tab3:
                         
                         if submit_edit:
                             # Update data di DataFrame
-                            df_verif.loc[doc_id, 'tanggal_verifikasi'] = edit_tgl
-                            df_verif.loc[doc_id, 'perusahaan'] = edit_perusahaan
-                            df_verif.loc[doc_id, 'keterangan'] = edit_keterangan
-                            df_verif.loc[doc_id, 'no_dokumen'] = edit_no_dokumen
-                            df_verif.loc[doc_id, 'nilai'] = edit_nilai
-                            df_verif.loc[doc_id, 'masalah'] = edit_masalah
-                            df_verif.loc[doc_id, 'status'] = edit_status
+                            df_verif.loc[original_idx, 'tanggal_verifikasi'] = edit_tgl
+                            df_verif.loc[original_idx, 'perusahaan'] = edit_perusahaan
+                            df_verif.loc[original_idx, 'keterangan'] = edit_keterangan
+                            df_verif.loc[original_idx, 'no_dokumen'] = edit_no_dokumen
+                            df_verif.loc[original_idx, 'nilai'] = edit_nilai
+                            df_verif.loc[original_idx, 'masalah'] = edit_masalah
+                            df_verif.loc[original_idx, 'status'] = edit_status
                             
                             # Simpan ke Google Drive
                             if simpan_dokumen_bermasalah(df_verif):
                                 st.success("✅ Data berhasil diupdate!")
                                 st.balloons()
-                                # Tidak pakai st.rerun()
+                                st.cache_data.clear()
+                                st.rerun()
                             else:
                                 st.error("❌ Gagal menyimpan perubahan")
                 
@@ -958,13 +974,14 @@ with tab3:
                         st.write("")  # Spacing
                         if st.button("💾 Simpan Perubahan", type="primary", key="btn_update_status_tab3"):
                             # Update status di DataFrame
-                            df_verif.loc[doc_id, 'status'] = new_status
+                            df_verif.loc[original_idx, 'status'] = new_status
                             
                             # Simpan ke Google Drive
                             if simpan_dokumen_bermasalah(df_verif):
                                 st.success(f"✅ Status berhasil diubah menjadi: **{new_status}**")
                                 st.balloons()
-                                # Tidak pakai st.rerun()
+                                st.cache_data.clear()
+                                st.rerun()
                             else:
                                 st.error("❌ Gagal menyimpan perubahan")
                 
@@ -996,18 +1013,19 @@ with tab3:
                         st.write("")  # Spacing
                         if st.button("🗑️ Hapus Data", type="primary", key="btn_delete_tab3", disabled=(confirm_text != "HAPUS")):
                             # Hapus data dari DataFrame
-                            df_verif = df_verif.drop(doc_id).reset_index(drop=True)
+                            df_verif = df_verif.drop(original_idx).reset_index(drop=True)
                             
                             # Simpan ke Google Drive
                             if simpan_dokumen_bermasalah(df_verif):
                                 st.success("✅ Data berhasil dihapus!")
-                                # Tidak pakai st.rerun()
+                                st.cache_data.clear()
+                                st.rerun()
                             else:
                                 st.error("❌ Gagal menghapus data")
         else:
             st.info("ℹ️ Tidak ada data untuk diedit atau dihapus")
 
-        # =============================
+            # =============================
         # TAMPILAN TABEL DATA
         # =============================
         st.markdown("---")
@@ -1057,3 +1075,4 @@ with tab3:
             with col_stat2:
                 selesai = status_count.get('SELESAI', 0)
                 st.metric("✅ Sudah Selesai", selesai)
+
