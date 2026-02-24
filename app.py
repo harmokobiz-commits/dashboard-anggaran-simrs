@@ -306,6 +306,7 @@ try:
         "no_transaksi": simrs_raw.iloc[:, 2],
         "nama_anggaran": simrs_raw.iloc[:, 3],
         "kode_ma": simrs_raw.iloc[:, 5].apply(ekstrak_kode_simrs),
+        "no_spk": simrs_raw.iloc[:, 7],
         "nilai": normalisasi_angka(simrs_raw.iloc[:, 8]),
     })
 
@@ -475,7 +476,7 @@ if st.session_state.active_tab == "tab1":
             st.metric("📄 Jumlah Dokumen", jumlah_dok)
 
         tampil_detail = detail.copy()
-        tampil_detail["nilai"] = tampil_detail["nilai"].apply(format_rp)  # PERBAIKAN: Ini yang benar, bukan "tampil"
+        tampil_detail["nilai"] = tampil_detail["nilai"].apply(format_rp)
 
         st.dataframe(
             tampil_detail[
@@ -605,6 +606,13 @@ if st.session_state.active_tab == "tab2":
     else:
         f_tgl = None
 
+    f_no_spk = st.text_input(
+        "🔍 Cari No. SPK",
+        placeholder="Ketik sebagian nomor SPK...",
+        help="Cari berdasarkan nomor SPK",
+        key="filter_no_spk_tab2"
+    )
+
     # =============================
     # TERAPKAN FILTER
     # =============================
@@ -622,6 +630,12 @@ if st.session_state.active_tab == "tab2":
         data = data[
             (data["tanggal"].dt.date >= f_tgl[0]) &
             (data["tanggal"].dt.date <= f_tgl[1])
+        ]
+    if f_no_spk:
+        data = data[
+            data["no_spk"]
+            .astype(str)
+            .str.contains(f_no_spk, case=False, na=False)
         ]
 
     data_tampil = data.copy()
@@ -680,7 +694,24 @@ if st.session_state.active_tab == "tab3":
                 min_value=0.0,
                 step=1000.0
             )
-            masalah = st.text_area("❌ Masalah / Kesalahan Dokumen")
+            # Load unique masalah dari data yang sudah ada
+            try:
+                df_existing = pd.read_excel(VERIFIKASI_DRIVE_URL)
+                unique_masalah = sorted(df_existing["masalah"].dropna().unique().tolist())
+            except:
+                unique_masalah = []
+
+            # Dropdown + text area
+            masalah_dropdown = st.selectbox(
+                "📋 Pilih Masalah (opsional)",
+                ["-- Ketik Manual --"] + unique_masalah,
+                key="masalah_dropdown"
+            )
+
+            if masalah_dropdown == "-- Ketik Manual --":
+                masalah = st.text_area("❌ Masalah / Kesalahan Dokumen")
+            else:
+                masalah = st.text_area("❌ Masalah / Kesalahan Dokumen", value=masalah_dropdown)
 
             status_selesai = st.checkbox("✅ Masalah sudah selesai")
 
@@ -692,14 +723,14 @@ if st.session_state.active_tab == "tab3":
                     st.error("❌ Perusahaan, No. Dokumen, dan Masalah harus diisi!")
                 else:
                     data_baru = pd.DataFrame([{
-                        "tanggal_verifikasi": tgl_verifikasi,
+                        "tanggal_verifikasi": tgl_verifikasi.strftime("%Y-%m-%d"),
                         "perusahaan": perusahaan,
                         "keterangan": keterangan,
                         "no_dokumen": no_dokumen,
                         "nilai": nilai,
                         "masalah": masalah,
                         "status": "SELESAI" if status_selesai else "BELUM",
-                        "tanggal_input": date.today()
+                        "tanggal_input": date.today().strftime("%Y-%m-%d")
                     }])
 
                     # Load data lama dari Google Drive
@@ -771,16 +802,24 @@ if st.session_state.active_tab == "tab3":
         st.markdown("### 🔍 Filter Data")
         
         # Convert tanggal ke datetime
+        # Pastikan semua format tanggal bisa dibaca
+        # Convert dengan berbagai kemungkinan format
+        # Pastikan semua format tanggal bisa dibaca
+        df_verif["tanggal_verifikasi"] = df_verif["tanggal_verifikasi"].astype(str)
         df_verif["tanggal_verifikasi"] = pd.to_datetime(
-            df_verif["tanggal_verifikasi"], errors="coerce"
+            df_verif["tanggal_verifikasi"], 
+            format="mixed",  # ← PENTING: bisa handle berbagai format
+            errors="coerce"
         )
-        
-        # Drop rows dengan tanggal invalid
-        df_verif = df_verif.dropna(subset=["tanggal_verifikasi"])
 
+        df_verif = df_verif.dropna(subset=["tanggal_verifikasi"])
+                
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
+            # Drop invalid dates sebelum filter
+            df_verif = df_verif[df_verif["tanggal_verifikasi"].notna()]
+
             min_tgl = df_verif["tanggal_verifikasi"].min()
             max_tgl = df_verif["tanggal_verifikasi"].max()
 
@@ -1025,7 +1064,7 @@ if st.session_state.active_tab == "tab3":
         else:
             st.info("ℹ️ Tidak ada data untuk diedit atau dihapus")
 
-            # =============================
+        # =============================
         # TAMPILAN TABEL DATA
         # =============================
         st.markdown("---")
@@ -1075,4 +1114,3 @@ if st.session_state.active_tab == "tab3":
             with col_stat2:
                 selesai = status_count.get('SELESAI', 0)
                 st.metric("✅ Sudah Selesai", selesai)
-
