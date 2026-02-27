@@ -570,48 +570,49 @@ if st.session_state.active_tab == "tab1":
 if st.session_state.active_tab == "tab2":
     st.subheader("🔎 Filter Laporan SIMRS")
 
-    f_kepada = st.multiselect(
-        "Perusahaan / Kepada",
-        sorted(simrs["kepada"].dropna().unique()),
-        key="filter_kepada_tab2"
-    )
-
-    f_anggaran = st.multiselect(
-        "Nama Anggaran",
-        sorted(simrs["nama_anggaran"].dropna().unique()),
-        key="filter_anggaran_tab2"
-    )
-
-    f_pengendali = st.multiselect(
-        "Pengendali",
-        sorted(simrs["pengendali"].dropna().unique()),
-        key="filter_pengendali_tab2"
-    )
-
-    f_kode_anggaran = st.multiselect(
-        "Kode Anggaran",
-        sorted(simrs["kode_anggaran"].dropna().unique()),
-        key="filter_kode_tab2"
-    )
-    
-    min_tgl = simrs["tanggal"].min()
-    max_tgl = simrs["tanggal"].max()
-
-    if pd.notna(min_tgl) and pd.notna(max_tgl):
-        f_tgl = st.date_input(
-            "Rentang Tanggal",
-            [min_tgl.date(), max_tgl.date()],
-            key="filter_tanggal_tab2"
+    with st.expander("🔍 Filter Data", expanded=False):
+        f_kepada = st.multiselect(
+            "Perusahaan / Kepada",
+            sorted(simrs["kepada"].dropna().unique()),
+            key="filter_kepada_tab2"
         )
-    else:
-        f_tgl = None
 
-    f_no_spk = st.text_input(
-        "🔍 Cari No. SPK",
-        placeholder="Ketik sebagian nomor SPK...",
-        help="Cari berdasarkan nomor SPK",
-        key="filter_no_spk_tab2"
-    )
+        f_anggaran = st.multiselect(
+            "Nama Anggaran",
+            sorted(simrs["nama_anggaran"].dropna().unique()),
+            key="filter_anggaran_tab2"
+        )
+
+        f_pengendali = st.multiselect(
+            "Pengendali",
+            sorted(simrs["pengendali"].dropna().unique()),
+            key="filter_pengendali_tab2"
+        )
+
+        f_kode_anggaran = st.multiselect(
+            "Kode Anggaran",
+            sorted(simrs["kode_anggaran"].dropna().unique()),
+            key="filter_kode_tab2"
+        )
+        
+        min_tgl = simrs["tanggal"].min()
+        max_tgl = simrs["tanggal"].max()
+
+        if pd.notna(min_tgl) and pd.notna(max_tgl):
+            f_tgl = st.date_input(
+                "Rentang Tanggal",
+                [min_tgl.date(), max_tgl.date()],
+                key="filter_tanggal_tab2"
+            )
+        else:
+            f_tgl = None
+
+        f_no_spk = st.text_input(
+            "🔍 Cari No. SPK",
+            placeholder="Ketik sebagian nomor SPK...",
+            help="Cari berdasarkan nomor SPK",
+            key="filter_no_spk_tab2"
+        )
 
     # =============================
     # TERAPKAN FILTER
@@ -668,6 +669,69 @@ if st.session_state.active_tab == "tab2":
 
     with col3:
         st.metric("❌ Dokumen Batal", jumlah_batal)
+
+    # =============================
+    # GRAFIK DISTRIBUSI DOKUMEN
+    # =============================
+    st.markdown("---")
+    st.subheader("📊 Grafik Distribusi Dokumen")
+
+    # Pilihan periode
+    col_periode, col_spacer = st.columns([1, 3])
+    with col_periode:
+        periode = st.radio(
+            "Tampilkan per:",
+            ["Minggu", "Bulan"],
+            horizontal=True,
+            key="periode_chart_tab2"
+        )
+
+    # Siapkan data untuk chart
+    data_chart = data[data["nilai"] > 0].copy()
+
+    if periode == "Minggu":
+        # Agregasi per minggu
+        data_chart["periode"] = data_chart["tanggal"].dt.to_period("W").astype(str)
+        label_x = "Minggu"
+    else:
+        # Agregasi per bulan
+        data_chart["periode"] = data_chart["tanggal"].dt.to_period("M").astype(str)
+        label_x = "Bulan"
+
+    # Hitung agregasi
+    periode_agg = data_chart.groupby("periode").agg(
+        jumlah=("nilai", "count")
+    ).reset_index()
+
+    # Hitung persentase
+    total_dok_chart = periode_agg["jumlah"].sum()
+    periode_agg["persentase"] = (periode_agg["jumlah"] / total_dok_chart * 100).round(1)
+
+    # Buat chart
+    base = alt.Chart(periode_agg).encode(
+        x=alt.X("periode:N", title=label_x)
+    )
+
+    bars = base.mark_bar(color="#4472C4").encode(
+        y=alt.Y("jumlah:Q", title="Jumlah Dokumen"),
+        tooltip=[
+            alt.Tooltip("periode:N", title=label_x),
+            alt.Tooltip("jumlah:Q", title="Jumlah Dokumen"),
+            alt.Tooltip("persentase:Q", format=".1f", title="Persentase (%)")
+        ]
+    )
+
+    line = base.mark_line(color="#ED7D31", strokeWidth=3, point=True).encode(
+        y=alt.Y("persentase:Q", title="Persentase (%)", axis=alt.Axis(orient="right")),
+        tooltip=[alt.Tooltip("persentase:Q", format=".1f", title="Persentase (%)")]
+    )
+
+    chart = alt.layer(bars, line).resolve_scale(y="independent").properties(height=400)
+
+    st.altair_chart(chart, use_container_width=True)
+
+    # Ringkasan
+    st.caption(f"📊 Total: **{total_dok_chart}** dokumen dari **{len(periode_agg)}** {periode.lower()}")
 
 # ======================================================
 # TAB 3 – DOKUMEN BERMASALAH
@@ -752,9 +816,7 @@ if st.session_state.active_tab == "tab3":
                         st.rerun()
 
     st.markdown("---")
-    st.subheader("📋 Daftar Dokumen Bermasalah")
-
-    # Tombol refresh manual
+        # Tombol refresh manual
     col_btn1, col_btn2 = st.columns([1, 5])
     with col_btn1:
         if st.button("🔄 Refresh", key="refresh_tab3"):
@@ -1072,6 +1134,8 @@ if st.session_state.active_tab == "tab3":
         
         # Reset data tanpa kolom 'id' untuk tampilan
         data_tampil = data.copy()
+        # Urutkan berdasarkan tanggal input terbaru di atas
+        data_tampil = data_tampil.sort_values("tanggal_input", ascending=False)
         if 'id' in data_tampil.columns:
             data_tampil = data_tampil.drop('id', axis=1)
         
