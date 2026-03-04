@@ -277,12 +277,13 @@ ma_raw = st.session_state.ma_raw
 
 try:
     ma = pd.DataFrame({
+        "status_hapus": ma_raw.iloc[:, 1],  # ← TAMBAH INI (Kolom B = index 1)
         "kode_dana": ma_raw.iloc[:, 2],
         "kode_ma": ma_raw.iloc[:, 3],
         "uraian": ma_raw.iloc[:, 5],
         "pagu": normalisasi_angka(ma_raw.iloc[:, 7]),
     })
-
+    
     ma[["kode_anggaran", "kode_pengendali"]] = ma["kode_ma"].apply(
         lambda x: pd.Series(parse_kode_ma(x))
     )
@@ -430,10 +431,22 @@ if st.session_state.active_tab == "tab1":
         ]
     ]
 
+    # Fungsi highlight baris yang dihapus
+    def highlight_hapus(row):
+        # Cari status_hapus dari lap_f berdasarkan kode_ma
+        try:
+            kode = row["kode_ma"]
+            status = lap_f[lap_f["kode_ma"] == kode]["status_hapus"].iloc[0]
+            if str(status).strip().upper() == "H":
+                return ['color: red; font-weight: bold'] * len(row)
+        except:
+            pass
+        return [''] * len(row)
+
     st.dataframe(
-        tampil.style.applymap(warna_persen, subset=["persen"]),
-        use_container_width=True
-    )
+    tampil.style.applymap(warna_persen, subset=["persen"]).apply(highlight_hapus, axis=1),
+    use_container_width=True
+)
 
     st.markdown("---")
     st.subheader("🔍 Detail Transaksi SIMRS")
@@ -563,6 +576,151 @@ if st.session_state.active_tab == "tab1":
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="download_rekap_tab1"
     )
+
+    # =============================
+    # GRAFIK REALISASI PER PENGENDALI
+    # =============================
+    st.markdown("---")
+    st.subheader("📈 Analisa Realisasi per Pengendali")
+    
+    # Toggle mode tampilan
+    mode_tampilan = st.radio(
+        "Mode Tampilan:",
+        ["📊 Ringkasan (8 Chart)", "🔍 Detail per Pengendali"],
+        horizontal=True,
+        key="mode_chart_tab1"
+    )
+    
+    if mode_tampilan == "📊 Ringkasan (8 Chart)":
+        # MODE RINGKASAN - 8 Chart Kecil
+        st.caption("💡 Tip: Klik chart untuk melihat detail lebih besar")
+        
+        # Buat 2 baris x 4 kolom
+        for row in range(2):
+            cols = st.columns(4)
+            for col_idx, col in enumerate(cols):
+                pengendali_idx = row * 4 + col_idx
+                if pengendali_idx < len(daftar_pengendali):
+                    pengendali_nama = daftar_pengendali[pengendali_idx]
+                    
+                    with col:
+                        # Filter data pengendali
+                        data_p = simrs_bulan[simrs_bulan["pengendali"] == pengendali_nama]
+                        
+                        # Agregasi bulanan
+                        bulanan = data_p.groupby("bulan").agg(
+                            capaian=("nilai", "sum")
+                        ).reset_index()
+                        
+                        # Ambil pagu
+                        pagu_p = lap_f[lap_f["pengendali"] == pengendali_nama]["pagu"].sum()
+                        persen_p = (bulanan["capaian"].sum() / pagu_p * 100) if pagu_p > 0 else 0
+                        
+                        # Mini chart
+                        mini_chart = alt.Chart(bulanan).mark_bar(size=15).encode(
+                            x=alt.X("bulan:N", title=None, axis=alt.Axis(labelAngle=-45, labelFontSize=8)),
+                            y=alt.Y("capaian:Q", title=None),
+                            color=alt.value("#4472C4"),
+                            tooltip=[
+                                alt.Tooltip("bulan:N", title="Bulan"),
+                                alt.Tooltip("capaian:Q", title="Capaian", format=",.0f")
+                            ]
+                        ).properties(height=120)
+                        
+                        # Tampilkan
+                        st.markdown(f"**{pengendali_nama[:30]}...**" if len(pengendali_nama) > 30 else f"**{pengendali_nama}**")
+                        st.altair_chart(mini_chart, use_container_width=True)
+                        st.caption(f"📊 {persen_p:.1f}% | Rp {format_rp(bulanan['capaian'].sum())}")
+    
+    else:
+        # MODE DETAIL - 1 Chart Besar
+        pengendali_pilih = st.selectbox(
+            "Pilih Pengendali untuk Analisa Detail:",
+            sorted(daftar_pengendali),
+            key="select_pengendali_detail_tab1"
+        )
+        
+        # Filter data pengendali terpilih
+        data_detail = simrs_bulan[simrs_bulan["pengendali"] == pengendali_pilih]
+        
+        # Agregasi bulanan
+        bulanan_detail = data_detail.groupby("bulan").agg(
+            capaian=("nilai", "sum"),
+            jumlah_dok=("nilai", "count")
+        ).reset_index()
+        
+        # Ambil pagu total
+        pagu_detail = lap_f[lap_f["pengendali"] == pengendali_pilih]["pagu"].sum()
+        capaian_detail = bulanan_detail["capaian"].sum()
+        persen_detail = (capaian_detail / pagu_detail * 100) if pagu_detail > 0 else 0
+        sisa_detail = pagu_detail - capaian_detail
+        
+        # Tambahkan kolom pagu per bulan (dibagi 12 bulan)
+        bulanan_detail["pagu_perbulan"] = pagu_detail / 12
+        bulanan_detail["persentase"] = (bulanan_detail["capaian"] / bulanan_detail["pagu_perbulan"] * 100).round(1)
+        
+        # Chart Detail
+        base = alt.Chart(bulanan_detail).encode(
+            x=alt.X("bulan:N", title="Bulan")
+        )
+        
+        # Bar capaian
+        bars_capaian = base.mark_bar(color="#4472C4").encode(
+            y=alt.Y("capaian:Q", title="Nilai (Rp)"),
+            tooltip=[
+                alt.Tooltip("bulan:N", title="Bulan"),
+                alt.Tooltip("capaian:Q", title="Capaian", format=",.0f"),
+                alt.Tooltip("jumlah_dok:Q", title="Jumlah Dokumen")
+            ]
+        )
+        
+        # Bar pagu (transparan)
+        bars_pagu = base.mark_bar(color="#ED7D31", opacity=0.3).encode(
+            y=alt.Y("pagu_perbulan:Q"),
+            tooltip=[alt.Tooltip("pagu_perbulan:Q", title="Target Pagu", format=",.0f")]
+        )
+        
+        # Line persentase
+        line_persen = base.mark_line(color="#70AD47", strokeWidth=3, point=True).encode(
+            y=alt.Y("persentase:Q", title="Persentase (%)", axis=alt.Axis(orient="right")),
+            tooltip=[alt.Tooltip("persentase:Q", title="Persentase (%)", format=".1f")]
+        )
+        
+        chart_detail = alt.layer(bars_pagu, bars_capaian, line_persen).resolve_scale(
+            y="independent"
+        ).properties(height=400, title=f"Realisasi Bulanan: {pengendali_pilih}")
+        
+        st.altair_chart(chart_detail, use_container_width=True)
+        
+        # Metrik ringkasan
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        with col_m1:
+            st.metric("💰 Pagu", f"Rp {format_rp(pagu_detail)}")
+        with col_m2:
+            st.metric("✅ Capaian", f"Rp {format_rp(capaian_detail)}")
+        with col_m3:
+            st.metric("📊 Persentase", f"{persen_detail:.1f}%")
+        with col_m4:
+            st.metric("💸 Sisa", f"Rp {format_rp(sisa_detail)}")
+        
+        # Tabel detail per bulan
+        st.markdown("#### 📋 Detail per Bulan")
+        tabel_bulanan = bulanan_detail.copy()
+        tabel_bulanan["capaian"] = tabel_bulanan["capaian"].apply(format_rp)
+        tabel_bulanan["pagu_perbulan"] = tabel_bulanan["pagu_perbulan"].apply(format_rp)
+        tabel_bulanan["persentase"] = tabel_bulanan["persentase"].apply(lambda x: f"{x:.1f}%")
+        
+        st.dataframe(
+            tabel_bulanan[["bulan", "capaian", "pagu_perbulan", "jumlah_dok", "persentase"]].rename(columns={
+                "bulan": "Bulan",
+                "capaian": "Capaian",
+                "pagu_perbulan": "Target Pagu",
+                "jumlah_dok": "Jumlah Dokumen",
+                "persentase": "Persentase"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
 
 # ======================================================
 # TAB 2 – LAPORAN SIMRS
