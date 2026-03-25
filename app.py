@@ -226,7 +226,7 @@ with st.sidebar.expander("ℹ️ About Aplikasi"):
     **Dashboard Anggaran SIMRS**
 
     **Dikembangkan oleh:**  
-    **Adi Harmoko Bagian Keuangan RSAB Harapan Kita**
+    **Adi Harmoko RSAB Harapan Kita**
 
     **Fungsi Utama:**
     - Monitoring realisasi anggaran SIMRS
