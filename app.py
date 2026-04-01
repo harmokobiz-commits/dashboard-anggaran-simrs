@@ -444,7 +444,7 @@ if st.session_state.active_tab == "tab1":
         return [''] * len(row)
 
     st.dataframe(
-    tampil.style.applymap(warna_persen, subset=["persen"]).apply(highlight_hapus, axis=1),
+    tampil.style.map(warna_persen, subset=["persen"]).apply(highlight_hapus, axis=1),
     use_container_width=True
 )
 
@@ -562,7 +562,7 @@ if st.session_state.active_tab == "tab1":
 
     st.subheader("📋 Rekap Realisasi per Pengendali")
     st.dataframe(
-        rekap_tampil.style.applymap(warna_persen, subset=["persen"]),
+        rekap_tampil.style.map(warna_persen, subset=["persen"]),
         use_container_width=True
     )
 
