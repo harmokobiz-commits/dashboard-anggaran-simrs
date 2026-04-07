@@ -32,6 +32,7 @@ PENGENDALI_MAP = {
     "6": "TIM KERJA ORGANISASI & SDM",
     "7": "TIM KERJA PENDIDIKAN & PELATIHAN",
     "8": "INSTALASI PEMASARAN & PENGEMBANGAN BISNIS",
+    "9": "SEKRETARIAT AIIB",
 }
 
 # =============================
@@ -114,6 +115,7 @@ def normalisasi_angka(series):
     """Konversi format angka Indonesia ke float"""
     return (
         series.astype(str)
+        .str.replace(" ", "", regex=False)  # ← TAMBAH INI: Hapus spasi
         .str.replace(".", "", regex=False)
         .str.replace(",", ".", regex=False)
         .str.replace("-", "0", regex=False)
@@ -226,7 +228,7 @@ with st.sidebar.expander("ℹ️ About Aplikasi"):
     **Dashboard Anggaran SIMRS**
 
     **Dikembangkan oleh:**  
-    **Adi Harmoko RSAB Harapan Kita**
+    **Adi Harmoko**
 
     **Fungsi Utama:**
     - Monitoring realisasi anggaran SIMRS
@@ -337,10 +339,19 @@ else:
 # TAB NAVIGASI DENGAN RADIO BUTTON (UNTUK MENJAGA TAB AKTIF)
 # =============================
 tab_names = ["📊 Realisasi Anggaran", "📄 Laporan SIMRS", "⚠️ Dokumen Bermasalah"]
+# Mapping tab ke index
+tab_index = 0
+if st.session_state.active_tab == "tab1":
+    tab_index = 0
+elif st.session_state.active_tab == "tab2":
+    tab_index = 1
+elif st.session_state.active_tab == "tab3":
+    tab_index = 2
+
 selected_tab = st.radio(
     "Pilih Tab:",
     tab_names,
-    index=tab_names.index(st.session_state.active_tab.replace("tab", "").replace("1", tab_names[0]).replace("2", tab_names[1]).replace("3", tab_names[2])),
+    index=tab_index,
     horizontal=True,
     key="tab_selector"
 )
@@ -577,150 +588,298 @@ if st.session_state.active_tab == "tab1":
         key="download_rekap_tab1"
     )
 
-    # =============================
-    # GRAFIK REALISASI PER PENGENDALI
+        # =============================
+    # ANALISA REALISASI PER PENGENDALI / MATA ANGGARAN
     # =============================
     st.markdown("---")
-    st.subheader("📈 Analisa Realisasi per Pengendali")
-    
-    # Toggle mode tampilan
-    mode_tampilan = st.radio(
-        "Mode Tampilan:",
-        ["📊 Ringkasan (8 Chart)", "🔍 Detail per Pengendali"],
+    st.subheader("📈 Analisa Realisasi per Pengendali / Mata Anggaran")
+
+    # Toggle: Pengendali vs Mata Anggaran
+    analisa_type = st.radio(
+        "Analisa berdasarkan:",
+        ["👥 Per Pengendali", "📋 Per Mata Anggaran"],
         horizontal=True,
-        key="mode_chart_tab1"
+        key="analisa_type_tab1"
     )
-    
-    if mode_tampilan == "📊 Ringkasan (8 Chart)":
-        # MODE RINGKASAN - 8 Chart Kecil
-        st.caption("💡 Tip: Klik chart untuk melihat detail lebih besar")
+
+    if analisa_type == "👥 Per Pengendali":
+        # =============================
+        # ANALISA PER PENGENDALI (kode yang sudah ada)
+        # =============================
         
-        # Buat 2 baris x 4 kolom
-        for row in range(2):
-            cols = st.columns(4)
-            for col_idx, col in enumerate(cols):
-                pengendali_idx = row * 4 + col_idx
-                if pengendali_idx < len(daftar_pengendali):
-                    pengendali_nama = daftar_pengendali[pengendali_idx]
-                    
-                    with col:
-                        # Filter data pengendali
-                        data_p = simrs_bulan[simrs_bulan["pengendali"] == pengendali_nama]
+        # Toggle mode tampilan
+        mode_tampilan = st.radio(
+            "Mode Tampilan:",
+            ["📊 Ringkasan (8 Chart)", "🔍 Detail per Pengendali"],
+            horizontal=True,
+            key="mode_chart_tab1"
+        )
+        
+        if mode_tampilan == "📊 Ringkasan (8 Chart)":
+            # MODE RINGKASAN - 8 Chart Kecil
+            st.caption("💡 Tip: Klik chart untuk melihat detail lebih besar")
+            
+            # Buat 2 baris x 4 kolom
+            for row in range(2):
+                cols = st.columns(4)
+                for col_idx, col in enumerate(cols):
+                    pengendali_idx = row * 4 + col_idx
+                    if pengendali_idx < len(daftar_pengendali):
+                        pengendali_nama = daftar_pengendali[pengendali_idx]
                         
-                        # Agregasi bulanan
-                        bulanan = data_p.groupby("bulan").agg(
-                            capaian=("nilai", "sum")
-                        ).reset_index()
-                        
-                        # Ambil pagu
-                        pagu_p = lap_f[lap_f["pengendali"] == pengendali_nama]["pagu"].sum()
-                        persen_p = (bulanan["capaian"].sum() / pagu_p * 100) if pagu_p > 0 else 0
-                        
-                        # Mini chart
-                        mini_chart = alt.Chart(bulanan).mark_bar(size=15).encode(
-                            x=alt.X("bulan:N", title=None, axis=alt.Axis(labelAngle=-45, labelFontSize=8)),
-                            y=alt.Y("capaian:Q", title=None),
-                            color=alt.value("#4472C4"),
-                            tooltip=[
-                                alt.Tooltip("bulan:N", title="Bulan"),
-                                alt.Tooltip("capaian:Q", title="Capaian", format=",.0f")
-                            ]
-                        ).properties(height=120)
-                        
-                        # Tampilkan
-                        st.markdown(f"**{pengendali_nama[:30]}...**" if len(pengendali_nama) > 30 else f"**{pengendali_nama}**")
-                        st.altair_chart(mini_chart, use_container_width=True)
-                        st.caption(f"📊 {persen_p:.1f}% | Rp {format_rp(bulanan['capaian'].sum())}")
-    
+                        with col:
+                            # Filter data pengendali
+                            data_p = simrs_bulan[simrs_bulan["pengendali"] == pengendali_nama]
+                            
+                            # Agregasi bulanan
+                            bulanan = data_p.groupby("bulan").agg(
+                                capaian=("nilai", "sum")
+                            ).reset_index()
+                            
+                            # Ambil pagu
+                            pagu_p = lap_f[lap_f["pengendali"] == pengendali_nama]["pagu"].sum()
+                            persen_p = (bulanan["capaian"].sum() / pagu_p * 100) if pagu_p > 0 else 0
+                            
+                            # Mini chart
+                            mini_chart = alt.Chart(bulanan).mark_bar(size=15).encode(
+                                x=alt.X("bulan:N", title=None, axis=alt.Axis(labelAngle=-45, labelFontSize=8)),
+                                y=alt.Y("capaian:Q", title=None),
+                                color=alt.value("#4472C4"),
+                                tooltip=[
+                                    alt.Tooltip("bulan:N", title="Bulan"),
+                                    alt.Tooltip("capaian:Q", title="Capaian", format=",.0f")
+                                ]
+                            ).properties(height=120)
+                            
+                            # Tampilkan
+                            st.markdown(f"**{pengendali_nama[:30]}...**" if len(pengendali_nama) > 30 else f"**{pengendali_nama}**")
+                            st.altair_chart(mini_chart, use_container_width=True)
+                            st.caption(f"📊 {persen_p:.1f}% | Rp {format_rp(bulanan['capaian'].sum())}")
+        
+        else:
+            # MODE DETAIL - 1 Chart Besar
+            pengendali_pilih = st.selectbox(
+                "Pilih Pengendali untuk Analisa Detail:",
+                sorted(daftar_pengendali),
+                key="select_pengendali_detail_tab1"
+            )
+            
+            # Filter data pengendali terpilih
+            data_detail = simrs_bulan[simrs_bulan["pengendali"] == pengendali_pilih]
+            
+            # Agregasi bulanan
+            bulanan_detail = data_detail.groupby("bulan").agg(
+                capaian=("nilai", "sum"),
+                jumlah_dok=("nilai", "count")
+            ).reset_index()
+            
+            # Ambil pagu total
+            pagu_detail = lap_f[lap_f["pengendali"] == pengendali_pilih]["pagu"].sum()
+            capaian_detail = bulanan_detail["capaian"].sum()
+            persen_detail = (capaian_detail / pagu_detail * 100) if pagu_detail > 0 else 0
+            sisa_detail = pagu_detail - capaian_detail
+            
+            # Tambahkan kolom pagu per bulan (dibagi 12 bulan)
+            bulanan_detail["pagu_perbulan"] = pagu_detail / 12
+            bulanan_detail["persentase"] = (bulanan_detail["capaian"] / bulanan_detail["pagu_perbulan"] * 100).round(1)
+            
+            # Chart Detail
+            base = alt.Chart(bulanan_detail).encode(
+                x=alt.X("bulan:N", title="Bulan")
+            )
+            
+            # Bar capaian
+            bars_capaian = base.mark_bar(color="#4472C4").encode(
+                y=alt.Y("capaian:Q", title="Nilai (Rp)"),
+                tooltip=[
+                    alt.Tooltip("bulan:N", title="Bulan"),
+                    alt.Tooltip("capaian:Q", title="Capaian", format=",.0f"),
+                    alt.Tooltip("jumlah_dok:Q", title="Jumlah Dokumen")
+                ]
+            )
+            
+            # Bar pagu (transparan)
+            bars_pagu = base.mark_bar(color="#ED7D31", opacity=0.3).encode(
+                y=alt.Y("pagu_perbulan:Q"),
+                tooltip=[alt.Tooltip("pagu_perbulan:Q", title="Target Pagu", format=",.0f")]
+            )
+            
+            # Line persentase
+            line_persen = base.mark_line(color="#70AD47", strokeWidth=3, point=True).encode(
+                y=alt.Y("persentase:Q", title="Persentase (%)", axis=alt.Axis(orient="right")),
+                tooltip=[alt.Tooltip("persentase:Q", title="Persentase (%)", format=".1f")]
+            )
+            
+            chart_detail = alt.layer(bars_pagu, bars_capaian, line_persen).resolve_scale(
+                y="independent"
+            ).properties(height=400, title=f"Realisasi Bulanan: {pengendali_pilih}")
+            
+            st.altair_chart(chart_detail, use_container_width=True)
+            
+            # Metrik ringkasan
+            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+            with col_m1:
+                st.metric("💰 Pagu", f"Rp {format_rp(pagu_detail)}")
+            with col_m2:
+                st.metric("✅ Capaian", f"Rp {format_rp(capaian_detail)}")
+            with col_m3:
+                st.metric("📊 Persentase", f"{persen_detail:.1f}%")
+            with col_m4:
+                st.metric("💸 Sisa", f"Rp {format_rp(sisa_detail)}")
+            
+            # Tabel detail per bulan
+            st.markdown("#### 📋 Detail per Bulan")
+            tabel_bulanan = bulanan_detail.copy()
+            tabel_bulanan["capaian"] = tabel_bulanan["capaian"].apply(format_rp)
+            tabel_bulanan["pagu_perbulan"] = tabel_bulanan["pagu_perbulan"].apply(format_rp)
+            tabel_bulanan["persentase"] = tabel_bulanan["persentase"].apply(lambda x: f"{x:.1f}%")
+            
+            st.dataframe(
+                tabel_bulanan[["bulan", "capaian", "pagu_perbulan", "jumlah_dok", "persentase"]].rename(columns={
+                    "bulan": "Bulan",
+                    "capaian": "Capaian",
+                    "pagu_perbulan": "Target Pagu",
+                    "jumlah_dok": "Jumlah Dokumen",
+                    "persentase": "Persentase"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+
     else:
-        # MODE DETAIL - 1 Chart Besar
-        pengendali_pilih = st.selectbox(
-            "Pilih Pengendali untuk Analisa Detail:",
-            sorted(daftar_pengendali),
-            key="select_pengendali_detail_tab1"
-        )
+        # =============================
+        # ANALISA PER MATA ANGGARAN (dari Tab 4 lama)
+        # =============================
         
-        # Filter data pengendali terpilih
-        data_detail = simrs_bulan[simrs_bulan["pengendali"] == pengendali_pilih]
+        # Filter data: HANYA dokumen dengan nilai > 0 (tidak batal)
+        simrs_aktif = simrs_bulan[simrs_bulan["nilai"] > 0].copy()
         
-        # Agregasi bulanan
-        bulanan_detail = data_detail.groupby("bulan").agg(
-            capaian=("nilai", "sum"),
-            jumlah_dok=("nilai", "count")
-        ).reset_index()
+        # Ambil unique mata anggaran yang punya transaksi
+        anggaran_list = sorted(simrs_aktif["nama_anggaran"].dropna().unique())
         
-        # Ambil pagu total
-        pagu_detail = lap_f[lap_f["pengendali"] == pengendali_pilih]["pagu"].sum()
-        capaian_detail = bulanan_detail["capaian"].sum()
-        persen_detail = (capaian_detail / pagu_detail * 100) if pagu_detail > 0 else 0
-        sisa_detail = pagu_detail - capaian_detail
-        
-        # Tambahkan kolom pagu per bulan (dibagi 12 bulan)
-        bulanan_detail["pagu_perbulan"] = pagu_detail / 12
-        bulanan_detail["persentase"] = (bulanan_detail["capaian"] / bulanan_detail["pagu_perbulan"] * 100).round(1)
-        
-        # Chart Detail
-        base = alt.Chart(bulanan_detail).encode(
-            x=alt.X("bulan:N", title="Bulan")
-        )
-        
-        # Bar capaian
-        bars_capaian = base.mark_bar(color="#4472C4").encode(
-            y=alt.Y("capaian:Q", title="Nilai (Rp)"),
-            tooltip=[
-                alt.Tooltip("bulan:N", title="Bulan"),
-                alt.Tooltip("capaian:Q", title="Capaian", format=",.0f"),
-                alt.Tooltip("jumlah_dok:Q", title="Jumlah Dokumen")
-            ]
-        )
-        
-        # Bar pagu (transparan)
-        bars_pagu = base.mark_bar(color="#ED7D31", opacity=0.3).encode(
-            y=alt.Y("pagu_perbulan:Q"),
-            tooltip=[alt.Tooltip("pagu_perbulan:Q", title="Target Pagu", format=",.0f")]
-        )
-        
-        # Line persentase
-        line_persen = base.mark_line(color="#70AD47", strokeWidth=3, point=True).encode(
-            y=alt.Y("persentase:Q", title="Persentase (%)", axis=alt.Axis(orient="right")),
-            tooltip=[alt.Tooltip("persentase:Q", title="Persentase (%)", format=".1f")]
-        )
-        
-        chart_detail = alt.layer(bars_pagu, bars_capaian, line_persen).resolve_scale(
-            y="independent"
-        ).properties(height=400, title=f"Realisasi Bulanan: {pengendali_pilih}")
-        
-        st.altair_chart(chart_detail, use_container_width=True)
-        
-        # Metrik ringkasan
-        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-        with col_m1:
-            st.metric("💰 Pagu", f"Rp {format_rp(pagu_detail)}")
-        with col_m2:
-            st.metric("✅ Capaian", f"Rp {format_rp(capaian_detail)}")
-        with col_m3:
-            st.metric("📊 Persentase", f"{persen_detail:.1f}%")
-        with col_m4:
-            st.metric("💸 Sisa", f"Rp {format_rp(sisa_detail)}")
-        
-        # Tabel detail per bulan
-        st.markdown("#### 📋 Detail per Bulan")
-        tabel_bulanan = bulanan_detail.copy()
-        tabel_bulanan["capaian"] = tabel_bulanan["capaian"].apply(format_rp)
-        tabel_bulanan["pagu_perbulan"] = tabel_bulanan["pagu_perbulan"].apply(format_rp)
-        tabel_bulanan["persentase"] = tabel_bulanan["persentase"].apply(lambda x: f"{x:.1f}%")
-        
-        st.dataframe(
-            tabel_bulanan[["bulan", "capaian", "pagu_perbulan", "jumlah_dok", "persentase"]].rename(columns={
+        if len(anggaran_list) == 0:
+            st.warning("⚠️ Tidak ada data transaksi aktif")
+        else:
+            # Dropdown pilih mata anggaran
+            selected_anggaran = st.selectbox(
+                "Pilih Mata Anggaran:",
+                anggaran_list,
+                key="select_anggaran_tab1"
+            )
+            
+            # Filter data anggaran terpilih
+            data_anggaran = simrs_aktif[simrs_aktif["nama_anggaran"] == selected_anggaran]
+            
+            # Ambil kode MA untuk cari pagu
+            kode_ma_anggaran = data_anggaran["kode_ma"].iloc[0]
+            
+            # Cari pagu dari ma
+            pagu_tahunan = ma[ma["kode_ma"] == kode_ma_anggaran]["pagu"].sum()
+            
+            # Agregasi per bulan
+            bulanan_anggaran = data_anggaran.groupby("bulan").agg(
+                capaian=("nilai", "sum"),
+                jumlah_dok=("nilai", "count")
+            ).reset_index()
+            
+            # Hitung persentase dari pagu tahunan
+            bulanan_anggaran["persen_tahunan"] = (bulanan_anggaran["capaian"] / pagu_tahunan * 100).round(2)
+            
+            # Total
+            total_capaian = bulanan_anggaran["capaian"].sum()
+            total_dok = bulanan_anggaran["jumlah_dok"].sum()
+            total_persen = (total_capaian / pagu_tahunan * 100) if pagu_tahunan > 0 else 0
+            
+            # Info Summary
+            st.markdown("---")
+            col_info1, col_info2, col_info3 = st.columns(3)
+            
+            with col_info1:
+                st.metric("💰 Pagu Tahunan", f"Rp {format_rp(pagu_tahunan)}")
+            
+            with col_info2:
+                st.metric("✅ Total Capaian", f"Rp {format_rp(total_capaian)}")
+            
+            with col_info3:
+                st.metric("📊 Persentase Capaian", f"{total_persen:.1f}%")
+            
+            st.caption(f"📄 Total Dokumen: **{total_dok}** transaksi (dokumen batal tidak dihitung)")
+            
+            # Tabel Detail per Bulan
+            st.markdown("---")
+            st.markdown("### 📋 Detail per Bulan")
+            
+            # Format tabel
+            tabel_detail = bulanan_anggaran.copy()
+            tabel_detail["capaian_fmt"] = tabel_detail["capaian"].apply(format_rp)
+            tabel_detail["persen_fmt"] = tabel_detail["persen_tahunan"].apply(lambda x: f"{x:.2f}%")
+            
+            # Tambahkan emoji indicator
+            def get_indicator(persen):
+                if persen >= 100:
+                    return "🔴"
+                elif persen >= 70:
+                    return "🟡"
+                else:
+                    return "🟢"
+            
+            tabel_detail["indicator"] = tabel_detail["persen_tahunan"].apply(get_indicator)
+            
+            # Tampilkan tabel
+            tabel_tampil = tabel_detail[["bulan", "capaian_fmt", "jumlah_dok", "persen_fmt", "indicator"]].rename(columns={
                 "bulan": "Bulan",
-                "capaian": "Capaian",
-                "pagu_perbulan": "Target Pagu",
+                "capaian_fmt": "Capaian (Rp)",
                 "jumlah_dok": "Jumlah Dokumen",
-                "persentase": "Persentase"
-            }),
-            use_container_width=True,
-            hide_index=True
-        )
+                "persen_fmt": "% dari Pagu Tahunan",
+                "indicator": "Status"
+            })
+            
+            # Tambahkan baris total
+            total_row = pd.DataFrame([{
+                "Bulan": "TOTAL",
+                "Capaian (Rp)": format_rp(total_capaian),
+                "Jumlah Dokumen": total_dok,
+                "% dari Pagu Tahunan": f"{total_persen:.2f}%",
+                "Status": get_indicator(total_persen)
+            }])
+            
+            tabel_final = pd.concat([tabel_tampil, total_row], ignore_index=True)
+            
+            st.dataframe(
+                tabel_final,
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Grafik Trend VERTICAL BAR (lebih jelas)
+            st.markdown("---")
+            st.markdown("### 📈 Grafik Trend Capaian")
+            
+            # Chart dengan Altair - VERTICAL
+            chart_trend = alt.Chart(bulanan_anggaran).mark_bar(color="#4472C4", size=60).encode(
+                x=alt.X("bulan:N", title="Bulan", axis=alt.Axis(labelAngle=0, labelFontSize=14)),
+                y=alt.Y("capaian:Q", title="Capaian (Rp)", axis=alt.Axis(format=",.0f")),
+                tooltip=[
+                    alt.Tooltip("bulan:N", title="Bulan"),
+                    alt.Tooltip("capaian:Q", title="Capaian", format=",.0f"),
+                    alt.Tooltip("jumlah_dok:Q", title="Jumlah Dokumen"),
+                    alt.Tooltip("persen_tahunan:Q", title="% dari Pagu", format=".2f")
+                ]
+            ).properties(
+                height=400,
+                width=600
+            )
+            
+            st.altair_chart(chart_trend, use_container_width=True)
+            
+            # Download button
+            st.download_button(
+                "⬇️ Download Detail Anggaran (Excel)",
+                data=export_excel_single(tabel_final, "Analisa_Anggaran"),
+                file_name=f"analisa_{selected_anggaran.replace('/', '_')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_analisa_tab1"
+            )
 
 # ======================================================
 # TAB 2 – LAPORAN SIMRS
@@ -865,17 +1024,31 @@ if st.session_state.active_tab == "tab2":
     total_dok_chart = periode_agg["jumlah"].sum()
     periode_agg["persentase"] = (periode_agg["jumlah"] / total_dok_chart * 100).round(1)
 
-    # Buat chart
+    # Tambahkan kolom bulan untuk pewarnaan (hanya untuk mode Minggu)
+    if periode == "Minggu":
+        # Extract bulan dari periode minggu (format: 2026-01, 2026-02)
+        periode_agg["bulan_warna"] = periode_agg["periode"].str[:7]  # Ambil YYYY-MM
+    else:
+        periode_agg["bulan_warna"] = periode_agg["periode"]
+
+    # Buat chart dengan warna per bulan
     base = alt.Chart(periode_agg).encode(
-        x=alt.X("periode:N", title=label_x)
+        x=alt.X("periode:N", title=label_x, axis=alt.Axis(labelAngle=-45))
     )
 
-    bars = base.mark_bar(color="#4472C4").encode(
+    bars = base.mark_bar().encode(
         y=alt.Y("jumlah:Q", title="Jumlah Dokumen"),
+        color=alt.Color(
+            "bulan_warna:N",
+            title="Bulan",
+            scale=alt.Scale(scheme="category10"),  # Warna otomatis berbeda per bulan
+            legend=alt.Legend(orient="top")
+        ),
         tooltip=[
             alt.Tooltip("periode:N", title=label_x),
             alt.Tooltip("jumlah:Q", title="Jumlah Dokumen"),
-            alt.Tooltip("persentase:Q", format=".1f", title="Persentase (%)")
+            alt.Tooltip("persentase:Q", format=".1f", title="Persentase (%)"),
+            alt.Tooltip("bulan_warna:N", title="Bulan")  # Tambah info bulan
         ]
     )
 
@@ -887,9 +1060,6 @@ if st.session_state.active_tab == "tab2":
     chart = alt.layer(bars, line).resolve_scale(y="independent").properties(height=400)
 
     st.altair_chart(chart, use_container_width=True)
-
-    # Ringkasan
-    st.caption(f"📊 Total: **{total_dok_chart}** dokumen dari **{len(periode_agg)}** {periode.lower()}")
 
 # ======================================================
 # TAB 3 – DOKUMEN BERMASALAH
@@ -1336,3 +1506,146 @@ if st.session_state.active_tab == "tab3":
             with col_stat2:
                 selesai = status_count.get('SELESAI', 0)
                 st.metric("✅ Sudah Selesai", selesai)
+
+# ======================================================
+# TAB 4 – ANALISA ANGGARAN
+# ======================================================
+if st.session_state.active_tab == "tab4":
+    st.subheader("📈 Analisa Capaian per Mata Anggaran")
+    
+    # Filter data: HANYA dokumen dengan nilai > 0 (tidak batal)
+    simrs_aktif = simrs[simrs["nilai"] > 0].copy()
+    
+    # Ambil unique mata anggaran yang punya transaksi
+    anggaran_list = sorted(simrs_aktif["nama_anggaran"].dropna().unique())
+    
+    if len(anggaran_list) == 0:
+        st.warning("⚠️ Tidak ada data transaksi aktif")
+    else:
+        # Dropdown pilih mata anggaran
+        selected_anggaran = st.selectbox(
+            "Pilih Mata Anggaran:",
+            anggaran_list,
+            key="select_anggaran_tab4"
+        )
+        
+        # Filter data anggaran terpilih
+        data_anggaran = simrs_aktif[simrs_aktif["nama_anggaran"] == selected_anggaran]
+        
+        # Ambil kode MA untuk cari pagu
+        kode_ma_anggaran = data_anggaran["kode_ma"].iloc[0]
+        
+        # Cari pagu dari ma
+        pagu_tahunan = ma[ma["kode_ma"] == kode_ma_anggaran]["pagu"].sum()
+        
+        # Agregasi per bulan
+        bulanan_anggaran = data_anggaran.groupby("bulan").agg(
+            capaian=("nilai", "sum"),
+            jumlah_dok=("nilai", "count")
+        ).reset_index()
+        
+        # Hitung persentase dari pagu tahunan
+        bulanan_anggaran["persen_tahunan"] = (bulanan_anggaran["capaian"] / pagu_tahunan * 100).round(2)
+        
+        # Total
+        total_capaian = bulanan_anggaran["capaian"].sum()
+        total_dok = bulanan_anggaran["jumlah_dok"].sum()
+        total_persen = (total_capaian / pagu_tahunan * 100) if pagu_tahunan > 0 else 0
+        
+        # Info Summary
+        st.markdown("---")
+        col_info1, col_info2, col_info3 = st.columns(3)
+        
+        with col_info1:
+            st.metric("💰 Pagu Tahunan", f"Rp {format_rp(pagu_tahunan)}")
+        
+        with col_info2:
+            st.metric("✅ Total Capaian", f"Rp {format_rp(total_capaian)}")
+        
+        with col_info3:
+            # Warna berdasarkan persentase
+            if total_persen >= 100:
+                delta_color = "off"
+            elif total_persen >= 70:
+                delta_color = "normal"
+            else:
+                delta_color = "normal"
+            st.metric("📊 Persentase Capaian", f"{total_persen:.1f}%")
+        
+        st.caption(f"📄 Total Dokumen: **{total_dok}** transaksi (dokumen batal tidak dihitung)")
+        
+        # Tabel Detail per Bulan
+        st.markdown("---")
+        st.markdown("### 📋 Detail per Bulan")
+        
+        # Format tabel
+        tabel_detail = bulanan_anggaran.copy()
+        tabel_detail["capaian_fmt"] = tabel_detail["capaian"].apply(format_rp)
+        tabel_detail["persen_fmt"] = tabel_detail["persen_tahunan"].apply(lambda x: f"{x:.2f}%")
+        
+        # Tambahkan emoji indicator
+        def get_indicator(persen):
+            if persen >= 100:
+                return "🔴"
+            elif persen >= 70:
+                return "🟡"
+            else:
+                return "🟢"
+        
+        tabel_detail["indicator"] = tabel_detail["persen_tahunan"].apply(get_indicator)
+        
+        # Tampilkan tabel
+        tabel_tampil = tabel_detail[["bulan", "capaian_fmt", "jumlah_dok", "persen_fmt", "indicator"]].rename(columns={
+            "bulan": "Bulan",
+            "capaian_fmt": "Capaian (Rp)",
+            "jumlah_dok": "Jumlah Dokumen",
+            "persen_fmt": "% dari Pagu Tahunan",
+            "indicator": "Status"
+        })
+        
+        # Tambahkan baris total
+        total_row = pd.DataFrame([{
+            "Bulan": "TOTAL",
+            "Capaian (Rp)": format_rp(total_capaian),
+            "Jumlah Dokumen": total_dok,
+            "% dari Pagu Tahunan": f"{total_persen:.2f}%",
+            "Status": get_indicator(total_persen)
+        }])
+        
+        tabel_final = pd.concat([tabel_tampil, total_row], ignore_index=True)
+        
+        st.dataframe(
+            tabel_final,
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Grafik Trend Horizontal
+        st.markdown("---")
+        st.markdown("### 📈 Grafik Trend Capaian")
+        
+        # Chart dengan Altair - HORIZONTAL BAR
+        chart_trend = alt.Chart(bulanan_anggaran).mark_bar(color="#4472C4", size=40).encode(
+            x=alt.X("capaian:Q", title="Capaian (Rp)", axis=alt.Axis(format=",.0f")),
+            y=alt.Y("bulan:N", title="Bulan", sort=None, axis=alt.Axis(labelFontSize=14)),
+            tooltip=[
+                alt.Tooltip("bulan:N", title="Bulan"),
+                alt.Tooltip("capaian:Q", title="Capaian", format=",.0f"),
+                alt.Tooltip("jumlah_dok:Q", title="Jumlah Dokumen"),
+                alt.Tooltip("persen_tahunan:Q", title="% dari Pagu", format=".2f")
+            ]
+        ).properties(
+            height=max(300, 80 * len(bulanan_anggaran)),  # Minimal 300px, atau 80px per bulan
+            width=700
+        )
+
+        st.altair_chart(chart_trend, use_container_width=True)
+        
+        # Download button
+        st.download_button(
+            "⬇️ Download Detail Anggaran (Excel)",
+            data=export_excel_single(tabel_final, "Analisa_Anggaran"),
+            file_name=f"analisa_{selected_anggaran.replace('/', '_')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_analisa_tab4"
+        )
