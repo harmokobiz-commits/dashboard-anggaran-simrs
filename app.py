@@ -6,6 +6,8 @@ from io import BytesIO
 from datetime import date
 import gspread
 from google.oauth2.service_account import Credentials
+import plotly.express as px  # ← TAMBAH INI
+import plotly.graph_objects as go  # ← TAMBAH INI
 
 # =============================
 # KONFIGURASI AWAL
@@ -73,13 +75,36 @@ def simpan_dokumen_bermasalah(df):
         client = connect_gdrive()
         if client is None:
             raise Exception("Koneksi Google Drive gagal")
-            
+        
+        # Kolom yang diperlukan
+        required_columns = ['tanggal_verifikasi', 'perusahaan', 'keterangan', 
+                           'no_dokumen', 'nilai', 'masalah', 'status', 'tanggal_input']
+        
+        # Filter kolom yang ada
+        available_columns = [col for col in required_columns if col in df.columns]
+        df_save = df[available_columns].copy()
+        
+        # Convert datetime columns to string format
+        if 'tanggal_verifikasi' in df_save.columns:
+            df_save['tanggal_verifikasi'] = pd.to_datetime(
+                df_save['tanggal_verifikasi'], 
+                errors='coerce'
+            ).dt.strftime('%Y-%m-%d')
+        
+        if 'tanggal_input' in df_save.columns:
+            df_save['tanggal_input'] = pd.to_datetime(
+                df_save['tanggal_input'], 
+                errors='coerce'
+            ).dt.strftime('%Y-%m-%d')
+        
+        # Simpan ke Google Sheet
         sheet = client.open_by_key(VERIFIKASI_FILE_ID).sheet1
         sheet.clear()
         sheet.update(
-            [df.columns.tolist()] + df.astype(str).values.tolist()
+            [df_save.columns.tolist()] + df_save.astype(str).values.tolist()
         )
         return True
+        
     except Exception as e:
         st.error(f"❌ Gagal menyimpan ke Google Drive: {e}")
         return False
@@ -421,30 +446,9 @@ if st.session_state.active_tab == "tab1":
     if f_pengendali_realisasi:
         lap_f = lap_f[lap_f["pengendali"].isin(f_pengendali_realisasi)]
 
-    # Format untuk tampilan
-    tampil = lap_f.copy()
-    tampil["pagu"] = tampil["pagu"].apply(format_rp)
-    tampil["capaian"] = tampil["capaian"].apply(format_rp)
-    tampil["sisa"] = tampil["sisa"].apply(format_rp)
-    tampil["persen"] = tampil["persen"].apply(lambda x: f"{x:.2f}%")
-
-    tampil = tampil[
-        [
-            "kode_dana",
-            "kode_ma",
-            "uraian",
-            "pagu",
-            "capaian",
-            "jumlah_transaksi",
-            "sisa",
-            "persen",
-            "pengendali"
-        ]
-    ]
-
-    # Fungsi highlight baris yang dihapus
+    # ===== FUNGSI HIGHLIGHT BARIS YANG DIHAPUS =====
     def highlight_hapus(row):
-        # Cari status_hapus dari lap_f berdasarkan kode_ma
+        """Highlight merah untuk baris yang dihapus (status H)"""
         try:
             kode = row["kode_ma"]
             status = lap_f[lap_f["kode_ma"] == kode]["status_hapus"].iloc[0]
@@ -454,10 +458,51 @@ if st.session_state.active_tab == "tab1":
             pass
         return [''] * len(row)
 
+    # ===== TABEL FORMATTED (DEFAULT) =====
+    st.markdown("### 📊 Tabel Realisasi Anggaran")
+    
+    tampil_formatted = lap_f.copy()
+    tampil_formatted["pagu"] = tampil_formatted["pagu"].apply(format_rp)
+    tampil_formatted["capaian"] = tampil_formatted["capaian"].apply(format_rp)
+    tampil_formatted["sisa"] = tampil_formatted["sisa"].apply(format_rp)
+    tampil_formatted["persen"] = tampil_formatted["persen"].apply(lambda x: f"{x:.2f}%")
+
+    tampil_formatted = tampil_formatted[
+        ["kode_dana", "kode_ma", "uraian", "pagu", "capaian", "jumlah_transaksi", "sisa", "persen", "pengendali"]
+    ]
+
     st.dataframe(
-    tampil.style.map(warna_persen, subset=["persen"]).apply(highlight_hapus, axis=1),
-    use_container_width=True
-)
+        tampil_formatted.style.map(warna_persen, subset=["persen"]).apply(highlight_hapus, axis=1),
+        use_container_width=True
+    )
+
+    # ===== TABEL SORTABLE (COLLAPSIBLE) =====
+    with st.expander("🔢 Lihat Tabel Sortable (Angka Mentah untuk Sorting)"):
+        st.caption("💡 Klik header kolom untuk sort ascending/descending")
+        
+        tampil_sortable = lap_f[
+            ["kode_dana", "kode_ma", "uraian", "pagu", "capaian", "jumlah_transaksi", "sisa", "persen", "pengendali"]
+        ].copy()
+        
+        # Rename untuk clarity
+        tampil_sortable = tampil_sortable.rename(columns={
+            "kode_dana": "Kode Dana",
+            "kode_ma": "Kode MA",
+            "uraian": "Uraian",
+            "pagu": "Pagu (Rp)",
+            "capaian": "Capaian (Rp)",
+            "jumlah_transaksi": "Jumlah Transaksi",
+            "sisa": "Sisa (Rp)",
+            "persen": "Persen (%)",
+            "pengendali": "Pengendali"
+        })
+        
+        st.dataframe(
+            tampil_sortable,
+            use_container_width=True,
+            height=400
+        )
+
 
     st.markdown("---")
     st.subheader("🔍 Detail Transaksi SIMRS")
@@ -516,7 +561,7 @@ if st.session_state.active_tab == "tab1":
 
     st.download_button(
         "⬇️ Download Excel Realisasi Anggaran",
-        data=export_excel_single(tampil, "Realisasi_Anggaran"),
+        data=export_excel_single(tampil_formatted, "Realisasi_Anggaran"),  # ← FIX: pakai tampil_formatted
         file_name="realisasi_anggaran.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="download_realisasi_tab1"
@@ -580,7 +625,7 @@ if st.session_state.active_tab == "tab1":
     st.download_button(
         "📥 Export Realisasi Anggaran (Excel)",
         data=export_excel({
-            "Realisasi Anggaran": tampil,
+            "Realisasi Anggaran": tampil_formatted,  # ← FIX: pakai tampil_formatted
             "Rekap Pengendali": rekap_tampil
         }),
         file_name="Realisasi_Anggaran_SIMRS.xlsx",
@@ -956,18 +1001,198 @@ if st.session_state.active_tab == "tab2":
             .str.contains(f_no_spk, case=False, na=False)
         ]
 
-    data_tampil = data.copy()
-    data_tampil["nilai"] = data_tampil["nilai"].apply(format_rp)
+    # ===== TABEL FORMATTED (DEFAULT) =====
+    st.markdown("### 📊 Tabel Laporan SIMRS")
+    
+    data_formatted = data.copy()
+    data_formatted["tanggal"] = data_formatted["tanggal"].dt.strftime("%Y-%m-%d")
+    data_formatted["nilai"] = data_formatted["nilai"].apply(format_rp)
 
-    st.dataframe(data_tampil, use_container_width=True)
+    st.dataframe(
+        data_formatted[["tanggal", "kepada", "no_transaksi", "nama_anggaran", "kode_ma", "no_spk", "nilai", "pengendali"]],
+        use_container_width=True
+    )
+
+    # ===== TABEL SORTABLE (COLLAPSIBLE) =====
+    with st.expander("🔢 Lihat Tabel Sortable (Angka Mentah untuk Sorting)"):
+        st.caption("💡 Klik header kolom untuk sort ascending/descending")
+        
+        data_sortable = data.copy()
+        
+        # Convert tanggal ke format date untuk sorting yang benar
+        data_sortable["tanggal_sort"] = data_sortable["tanggal"]
+        data_sortable["tanggal"] = data_sortable["tanggal"].dt.strftime("%Y-%m-%d")
+        
+        # Pilih dan rename kolom
+        data_sortable = data_sortable[[
+            "tanggal", "kepada", "no_transaksi", "nama_anggaran", 
+            "kode_ma", "no_spk", "nilai", "pengendali"
+        ]].copy()
+        
+        data_sortable = data_sortable.rename(columns={
+            "tanggal": "Tanggal",
+            "kepada": "Kepada",
+            "no_transaksi": "No. Transaksi",
+            "nama_anggaran": "Nama Anggaran",
+            "kode_ma": "Kode MA",
+            "no_spk": "No. SPK",
+            "nilai": "Nilai (Rp)",
+            "pengendali": "Pengendali"
+        })
+        
+        st.dataframe(
+            data_sortable,
+            use_container_width=True,
+            height=400
+        )
 
     st.download_button(
         "⬇️ Download Excel Laporan SIMRS",
-        data=export_excel_single(data, "Laporan_SIMRS"),
+        data=export_excel_single(data_formatted, "Laporan_SIMRS"),
         file_name="laporan_simrs.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="download_laporan_tab2"
     )
+
+    # =============================
+    # SUNBURST CHART - HIERARKI ANGGARAN
+    # =============================
+    st.markdown("---")
+    st.subheader("🎯 Visualisasi Hierarki Anggaran (Sunburst)")
+    
+    # Filter hanya data dengan nilai > 0 (exclude dokumen batal)
+    data_sunburst = data[data["nilai"] > 0].copy()
+    
+    if len(data_sunburst) == 0:
+        st.warning("⚠️ Tidak ada data untuk divisualisasikan (semua dokumen bernilai 0)")
+    else:
+        # ===== TOGGLE MODE TAMPILAN =====
+        col_mode, col_spacer = st.columns([2, 3])
+        with col_mode:
+            display_mode = st.radio(
+                "Mode Tampilan:",
+                ["📊 Proporsional (Sesuai Nilai)", "📋 Equal Size (Mudah Dibaca)"],
+                horizontal=True,
+                key="sunburst_mode_tab2",
+                help="Proporsional: ukuran slice sesuai nilai | Equal Size: semua slice sama besar untuk kemudahan membaca"
+            )
+        
+        # Agregasi data per level
+        sunburst_agg = data_sunburst.groupby(
+            ["pengendali", "kode_anggaran", "nama_anggaran"], 
+            as_index=False
+        ).agg(
+            nilai=("nilai", "sum"),
+            jumlah_dok=("nilai", "count"),
+            perusahaan_list=("kepada", lambda x: ", ".join(x.value_counts().head(5).index.tolist()))
+        )
+        
+        # Hitung persentase dari total
+        total_nilai = sunburst_agg["nilai"].sum()
+        sunburst_agg["persen"] = (sunburst_agg["nilai"] / total_nilai * 100).round(2)
+        
+        # Untuk mode Equal Size, buat kolom nilai uniform
+        if display_mode == "📋 Equal Size (Mudah Dibaca)":
+            sunburst_agg["nilai_display"] = 1  # Semua slice sama besar
+        else:
+            sunburst_agg["nilai_display"] = sunburst_agg["nilai"]
+        
+        # Buat label dengan info lengkap
+        sunburst_agg["label_short"] = sunburst_agg.apply(
+            lambda row: f"{row['nama_anggaran'][:25]}..." if len(row['nama_anggaran']) > 25 else row['nama_anggaran'],
+            axis=1
+        )
+        
+        # Buat custom hover text
+        sunburst_agg["hover_text"] = sunburst_agg.apply(
+            lambda row: (
+                f"<b>{row['nama_anggaran']}</b><br>"
+                f"━━━━━━━━━━━━━━━━━━━━━━<br>"
+                f"<b>Pengendali:</b> {row['pengendali']}<br>"
+                f"<b>Kode:</b> {row['kode_anggaran']}<br>"
+                f"<br>"
+                f"<b>💰 Nilai:</b> Rp {format_rp(row['nilai'])}<br>"
+                f"<b>📊 Persentase:</b> {row['persen']:.2f}%<br>"
+                f"<b>📄 Jumlah Dokumen:</b> {row['jumlah_dok']}<br>"
+                f"<br>"
+                f"<b>🏢 Top Perusahaan:</b><br>{row['perusahaan_list']}"
+            ),
+            axis=1
+        )
+        
+        # Buat Sunburst Chart
+        fig = px.sunburst(
+            sunburst_agg,
+            path=["pengendali", "kode_anggaran", "nama_anggaran"],
+            values="nilai_display",  # Gunakan nilai_display (bisa real atau uniform)
+            color="persen",
+            color_continuous_scale="RdYlGn_r",
+            hover_data={
+                "nilai": ":,.0f",
+                "jumlah_dok": True,
+                "persen": ":.2f",
+                "perusahaan_list": False,
+                "nilai_display": False
+            },
+            custom_data=["hover_text"]
+        )
+        
+        # Update traces
+        fig.update_traces(
+            textinfo="label+percent entry",
+            hovertemplate='%{customdata[0]}<extra></extra>',
+            marker=dict(
+                line=dict(color='white', width=2)
+            ),
+            textfont=dict(
+                size=12,  # Ukuran font lebih besar
+                family="Arial, sans-serif"
+            ),
+            insidetextorientation='radial'
+        )
+        
+        # Update layout
+        fig.update_layout(
+            height=800,  # Lebih tinggi untuk kemudahan membaca
+            margin=dict(t=50, l=10, r=10, b=10),
+            coloraxis_colorbar=dict(
+                title="% dari Total",
+                ticksuffix="%",
+                len=0.7,
+                thickness=20
+            ),
+            font=dict(size=12)
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Info & Tips
+        if display_mode == "📊 Proporsional (Sesuai Nilai)":
+            st.info(
+                "💡 **Mode Proporsional:** Ukuran slice mencerminkan nilai transaksi sebenarnya. "
+                "Slice kecil mungkin sulit dibaca — gunakan **zoom** (klik slice) atau switch ke mode Equal Size."
+            )
+        else:
+            st.info(
+                "💡 **Mode Equal Size:** Semua slice ditampilkan dengan ukuran sama untuk kemudahan membaca. "
+                "Nilai dan persentase tetap akurat di tooltip. Switch ke mode Proporsional untuk melihat proporsi sebenarnya."
+            )
+        
+        st.caption(
+            "🖱️ **Interaksi:** Klik slice → zoom in | Klik center → zoom out | Hover → detail lengkap"
+        )
+        
+        # Statistik ringkas
+        st.markdown("---")
+        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+        with col_stat1:
+            st.metric("📊 Total Pengendali", len(sunburst_agg["pengendali"].unique()))
+        with col_stat2:
+            st.metric("🔢 Total Kode Anggaran", len(sunburst_agg["kode_anggaran"].unique()))
+        with col_stat3:
+            st.metric("📋 Total Mata Anggaran", len(sunburst_agg["nama_anggaran"].unique()))
+        with col_stat4:
+            st.metric("💰 Total Nilai", f"Rp {format_rp(total_nilai)}")
 
     # =============================
     # METRIK
@@ -1365,9 +1590,10 @@ if st.session_state.active_tab == "tab3":
                         
                         submit_edit = st.form_submit_button("💾 Simpan Perubahan")
                         
+                        
                         if submit_edit:
-                            # Update data di DataFrame
-                            df_verif.loc[original_idx, 'tanggal_verifikasi'] = edit_tgl
+                            # Update data di DataFrame - CONVERT date object to datetime
+                            df_verif.loc[original_idx, 'tanggal_verifikasi'] = pd.to_datetime(edit_tgl)  # ← FIX: Convert date to datetime
                             df_verif.loc[original_idx, 'perusahaan'] = edit_perusahaan
                             df_verif.loc[original_idx, 'keterangan'] = edit_keterangan
                             df_verif.loc[original_idx, 'no_dokumen'] = edit_no_dokumen
