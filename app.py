@@ -1055,29 +1055,32 @@ if st.session_state.active_tab == "tab2":
     )
 
     # =============================
-    # SUNBURST CHART - HIERARKI ANGGARAN
+    # SUNBURST CHART - HIERARKI ANGGARAN (INTERACTIVE)
     # =============================
     st.markdown("---")
-    st.subheader("🎯 Visualisasi Hierarki Anggaran (Sunburst)")
+    st.subheader("🎯 Visualisasi Hierarki Anggaran (Interactive)")
     
-    # Filter hanya data dengan nilai > 0 (exclude dokumen batal)
+    # Filter hanya data dengan nilai > 0
     data_sunburst = data[data["nilai"] > 0].copy()
     
     if len(data_sunburst) == 0:
-        st.warning("⚠️ Tidak ada data untuk divisualisasikan (semua dokumen bernilai 0)")
+        st.warning("⚠️ Tidak ada data untuk divisualisasikan")
     else:
-        # ===== TOGGLE MODE TAMPILAN =====
+        # ===== SESSION STATE untuk tracking selection =====
+        if "selected_path" not in st.session_state:
+            st.session_state.selected_path = None
+        
+        # ===== TOGGLE MODE =====
         col_mode, col_spacer = st.columns([2, 3])
         with col_mode:
             display_mode = st.radio(
-                "Mode Tampilan:",
-                ["📊 Proporsional (Sesuai Nilai)", "📋 Equal Size (Mudah Dibaca)"],
+                "Mode Chart:",
+                ["📊 Proporsional", "📋 Equal Size"],
                 horizontal=True,
-                key="sunburst_mode_tab2",
-                help="Proporsional: ukuran slice sesuai nilai | Equal Size: semua slice sama besar untuk kemudahan membaca"
+                key="sunburst_mode_tab2"
             )
         
-        # Agregasi data per level
+        # Agregasi data
         sunburst_agg = data_sunburst.groupby(
             ["pengendali", "kode_anggaran", "nama_anggaran"], 
             as_index=False
@@ -1087,110 +1090,235 @@ if st.session_state.active_tab == "tab2":
             perusahaan_list=("kepada", lambda x: ", ".join(x.value_counts().head(5).index.tolist()))
         )
         
-        # Hitung persentase dari total
         total_nilai = sunburst_agg["nilai"].sum()
         sunburst_agg["persen"] = (sunburst_agg["nilai"] / total_nilai * 100).round(2)
         
-        # Untuk mode Equal Size, buat kolom nilai uniform
-        if display_mode == "📋 Equal Size (Mudah Dibaca)":
-            sunburst_agg["nilai_display"] = 1  # Semua slice sama besar
+        if display_mode == "📋 Equal Size":
+            sunburst_agg["nilai_display"] = 1
         else:
             sunburst_agg["nilai_display"] = sunburst_agg["nilai"]
         
-        # Buat label dengan info lengkap
-        sunburst_agg["label_short"] = sunburst_agg.apply(
-            lambda row: f"{row['nama_anggaran'][:25]}..." if len(row['nama_anggaran']) > 25 else row['nama_anggaran'],
-            axis=1
-        )
-        
-        # Buat custom hover text
         sunburst_agg["hover_text"] = sunburst_agg.apply(
             lambda row: (
                 f"<b>{row['nama_anggaran']}</b><br>"
                 f"━━━━━━━━━━━━━━━━━━━━━━<br>"
                 f"<b>Pengendali:</b> {row['pengendali']}<br>"
-                f"<b>Kode:</b> {row['kode_anggaran']}<br>"
-                f"<br>"
+                f"<b>Kode:</b> {row['kode_anggaran']}<br><br>"
                 f"<b>💰 Nilai:</b> Rp {format_rp(row['nilai'])}<br>"
                 f"<b>📊 Persentase:</b> {row['persen']:.2f}%<br>"
-                f"<b>📄 Jumlah Dokumen:</b> {row['jumlah_dok']}<br>"
-                f"<br>"
+                f"<b>📄 Jumlah Dok:</b> {row['jumlah_dok']}<br><br>"
                 f"<b>🏢 Top Perusahaan:</b><br>{row['perusahaan_list']}"
             ),
             axis=1
         )
         
-        # Buat Sunburst Chart
-        fig = px.sunburst(
-            sunburst_agg,
-            path=["pengendali", "kode_anggaran", "nama_anggaran"],
-            values="nilai_display",  # Gunakan nilai_display (bisa real atau uniform)
-            color="persen",
-            color_continuous_scale="RdYlGn_r",
-            hover_data={
-                "nilai": ":,.0f",
-                "jumlah_dok": True,
-                "persen": ":.2f",
-                "perusahaan_list": False,
-                "nilai_display": False
-            },
-            custom_data=["hover_text"]
-        )
+        # ===== CONTAINER dengan STICKY CHART =====
+        # Gunakan HTML/CSS untuk sticky positioning
+        st.markdown("""
+        <style>
+        .sticky-chart {
+            position: sticky;
+            top: 60px;
+            z-index: 100;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        </style>
+        """, unsafe_allow_html=True)
         
-        # Update traces
-        fig.update_traces(
-            textinfo="label+percent entry",
-            hovertemplate='%{customdata[0]}<extra></extra>',
-            marker=dict(
-                line=dict(color='white', width=2)
-            ),
-            textfont=dict(
-                size=12,  # Ukuran font lebih besar
-                family="Arial, sans-serif"
-            ),
-            insidetextorientation='radial'
-        )
+        col_tree, col_chart = st.columns([1, 2])
         
-        # Update layout
-        fig.update_layout(
-            height=800,  # Lebih tinggi untuk kemudahan membaca
-            margin=dict(t=50, l=10, r=10, b=10),
-            coloraxis_colorbar=dict(
-                title="% dari Total",
-                ticksuffix="%",
-                len=0.7,
-                thickness=20
-            ),
-            font=dict(size=12)
-        )
+        # ===== KOLOM KIRI: TREE NAVIGATION =====
+        with col_tree:
+            st.markdown("#### 📑 Navigasi Hierarki")
+            st.caption("💡 Klik item untuk zoom chart di sebelah kanan")
+            
+            # Build tree structure
+            tree_data = {}
+            for _, row in sunburst_agg.iterrows():
+                pengendali = row['pengendali']
+                kode = row['kode_anggaran']
+                nama = row['nama_anggaran']
+                
+                if pengendali not in tree_data:
+                    tree_data[pengendali] = {}
+                if kode not in tree_data[pengendali]:
+                    tree_data[pengendali][kode] = []
+                tree_data[pengendali][kode].append({
+                    'nama': nama,
+                    'persen': row['persen'],
+                    'nilai': row['nilai'],
+                    'jumlah_dok': row['jumlah_dok']
+                })
+            
+            # Display tree with CLICKABLE buttons
+            for pengendali in sorted(tree_data.keys()):
+                total_pengendali = sunburst_agg[sunburst_agg['pengendali'] == pengendali]['nilai'].sum()
+                persen_pengendali = (total_pengendali / total_nilai * 100)
+                
+                # Button untuk PENGENDALI (level 1)
+                btn_pengendali = st.button(
+                    f"▼ {pengendali}  \n`{persen_pengendali:.1f}%` | Rp {format_rp(total_pengendali)}",
+                    key=f"btn_pengendali_{pengendali}",
+                    use_container_width=True,
+                    type="secondary"
+                )
+                
+                if btn_pengendali:
+                    st.session_state.selected_path = [pengendali]
+                    st.rerun()
+                
+                # Tampilkan sub-items jika pengendali dipilih
+                if st.session_state.selected_path and st.session_state.selected_path[0] == pengendali:
+                    for kode in sorted(tree_data[pengendali].keys()):
+                        items = tree_data[pengendali][kode]
+                        total_kode = sum(item['nilai'] for item in items)
+                        persen_kode = (total_kode / total_nilai * 100)
+                        
+                        # Button untuk KODE ANGGARAN (level 2)
+                        btn_kode = st.button(
+                            f"  📦 {kode} `{persen_kode:.1f}%`",
+                            key=f"btn_kode_{pengendali}_{kode}",
+                            use_container_width=True
+                        )
+                        
+                        if btn_kode:
+                            st.session_state.selected_path = [pengendali, kode]
+                            st.rerun()
+                        
+                        # Tampilkan mata anggaran jika kode dipilih
+                        if (len(st.session_state.selected_path) >= 2 and 
+                            st.session_state.selected_path[1] == kode):
+                            
+                            for item in items:
+                                # Button untuk MATA ANGGARAN (level 3)
+                                btn_nama = st.button(
+                                    f"    • {item['nama'][:35]}... `{item['persen']:.1f}%` | {item['jumlah_dok']} dok",
+                                    key=f"btn_nama_{pengendali}_{kode}_{item['nama'][:30]}",
+                                    use_container_width=True
+                                )
+                                
+                                if btn_nama:
+                                    st.session_state.selected_path = [pengendali, kode, item['nama']]
+                                    st.rerun()
+                        
+                        st.markdown("---")
         
-        st.plotly_chart(fig, use_container_width=True)
+        # ===== KOLOM KANAN: STICKY CHART =====
+        with col_chart:
+            # Container untuk sticky chart
+            chart_container = st.container()
+            
+            with chart_container:
+                st.markdown('<div class="sticky-chart">', unsafe_allow_html=True)
+                st.markdown("#### 📊 Sunburst Chart")
+                
+                # Buat chart FOCUSED berdasarkan selection
+                if st.session_state.selected_path:
+                    # Filter data berdasarkan path yang dipilih
+                    filtered_data = sunburst_agg.copy()
+                    
+                    if len(st.session_state.selected_path) >= 1:
+                        filtered_data = filtered_data[filtered_data['pengendali'] == st.session_state.selected_path[0]]
+                    
+                    if len(st.session_state.selected_path) >= 2:
+                        filtered_data = filtered_data[filtered_data['kode_anggaran'] == st.session_state.selected_path[1]]
+                    
+                    if len(st.session_state.selected_path) >= 3:
+                        filtered_data = filtered_data[filtered_data['nama_anggaran'] == st.session_state.selected_path[2]]
+                    
+                    # Rebuild hover text untuk filtered data
+                    filtered_data["hover_text"] = filtered_data.apply(
+                        lambda row: (
+                            f"<b>{row['nama_anggaran']}</b><br>"
+                            f"━━━━━━━━━━━━━━━━━━━━━━<br>"
+                            f"<b>Pengendali:</b> {row['pengendali']}<br>"
+                            f"<b>Kode:</b> {row['kode_anggaran']}<br><br>"
+                            f"<b>💰 Nilai:</b> Rp {format_rp(row['nilai'])}<br>"
+                            f"<b>📊 Persentase:</b> {row['persen']:.2f}%<br>"
+                            f"<b>📄 Jumlah Dok:</b> {row['jumlah_dok']}<br><br>"
+                            f"<b>🏢 Top Perusahaan:</b><br>{row['perusahaan_list']}"
+                        ),
+                        axis=1
+                    )
+                    
+                    chart_data = filtered_data
+                    chart_title = " → ".join(st.session_state.selected_path)
+                else:
+                    chart_data = sunburst_agg
+                    chart_title = "Semua Data"
+                
+                # Info path saat ini
+                if st.session_state.selected_path:
+                    st.info(f"🎯 **Fokus:** {' → '.join(st.session_state.selected_path)}")
+                    if st.button("↶ Reset ke View Semua", key="reset_view"):
+                        st.session_state.selected_path = None
+                        st.rerun()
+                
+                # Buat Sunburst Chart
+                fig = px.sunburst(
+                    chart_data,
+                    path=["pengendali", "kode_anggaran", "nama_anggaran"],
+                    values="nilai_display",
+                    color="persen",
+                    color_continuous_scale="RdYlGn_r",
+                    hover_data={
+                        "nilai": ":,.0f",
+                        "jumlah_dok": True,
+                        "persen": ":.2f",
+                        "perusahaan_list": False,
+                        "nilai_display": False
+                    },
+                    custom_data=["hover_text"],
+                    title=f"Detail: {chart_title}"
+                )
+                
+                fig.update_traces(
+                    textinfo="label+percent entry",
+                    hovertemplate='%{customdata[0]}<extra></extra>',
+                    marker=dict(line=dict(color='white', width=2)),
+                    textfont=dict(size=12, family="Arial, sans-serif"),
+                    insidetextorientation='radial'
+                )
+                
+                fig.update_layout(
+                    height=700,
+                    margin=dict(t=50, l=10, r=10, b=10),
+                    coloraxis_colorbar=dict(
+                        title="% Total",
+                        ticksuffix="%",
+                        len=0.7,
+                        thickness=15
+                    ),
+                    font=dict(size=11)
+                )
+                
+                st.plotly_chart(fig, use_container_width=True, key=f"chart_{len(st.session_state.selected_path) if st.session_state.selected_path else 0}")
+                
+                st.markdown('</div>', unsafe_allow_html=True)
         
         # Info & Tips
-        if display_mode == "📊 Proporsional (Sesuai Nilai)":
-            st.info(
-                "💡 **Mode Proporsional:** Ukuran slice mencerminkan nilai transaksi sebenarnya. "
-                "Slice kecil mungkin sulit dibaca — gunakan **zoom** (klik slice) atau switch ke mode Equal Size."
-            )
-        else:
-            st.info(
-                "💡 **Mode Equal Size:** Semua slice ditampilkan dengan ukuran sama untuk kemudahan membaca. "
-                "Nilai dan persentase tetap akurat di tooltip. Switch ke mode Proporsional untuk melihat proporsi sebenarnya."
-            )
-        
-        st.caption(
-            "🖱️ **Interaksi:** Klik slice → zoom in | Klik center → zoom out | Hover → detail lengkap"
+        st.markdown("---")
+        st.info(
+            "💡 **Cara Pakai:**\n"
+            "1. **Klik Pengendali** di navigasi kiri → Chart fokus ke pengendali tersebut\n"
+            "2. **Klik Kode Anggaran** (📦) → Chart fokus lebih detail\n"
+            "3. **Klik Mata Anggaran** (•) → Lihat detail spesifik\n"
+            "4. **Scroll ke bawah** → Chart tetap terlihat (sticky)\n"
+            "5. **Klik 'Reset'** → Kembali ke view semua"
         )
         
-        # Statistik ringkas
+        # Statistik
         st.markdown("---")
         col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
         with col_stat1:
-            st.metric("📊 Total Pengendali", len(sunburst_agg["pengendali"].unique()))
+            st.metric("📊 Pengendali", len(sunburst_agg["pengendali"].unique()))
         with col_stat2:
-            st.metric("🔢 Total Kode Anggaran", len(sunburst_agg["kode_anggaran"].unique()))
+            st.metric("🔢 Kode Anggaran", len(sunburst_agg["kode_anggaran"].unique()))
         with col_stat3:
-            st.metric("📋 Total Mata Anggaran", len(sunburst_agg["nama_anggaran"].unique()))
+            st.metric("📋 Mata Anggaran", len(sunburst_agg["nama_anggaran"].unique()))
         with col_stat4:
             st.metric("💰 Total Nilai", f"Rp {format_rp(total_nilai)}")
 
