@@ -42,6 +42,7 @@ PENGENDALI_MAP = {
 # =============================
 MA_DRIVE_URL = "https://docs.google.com/spreadsheets/d/15StwZUyvQ7jhkVE97sL6tSO5z3UPXk0-/export?format=xlsx"
 SIMRS_DRIVE_URL = "https://docs.google.com/spreadsheets/d/1dS9ukqE-epEapvaAySZEuyyhYkZsBsxF/export?format=xlsx"
+VPU_DRIVE_URL = "https://docs.google.com/spreadsheets/d/1dS9ukqE-epEapvaAySZEuyyhYkZsBsxF/export?format=xlsx&gid=1400931617"
 VERIFIKASI_DRIVE_URL = "https://docs.google.com/spreadsheets/d/1qhw5rS_dXNpcqzuOOQqdCQSvIhC1mAb1YC0Un_zf8_c/export?format=xlsx"
 VERIFIKASI_FILE_ID = "1qhw5rS_dXNpcqzuOOQqdCQSvIhC1mAb1YC0Un_zf8_c"
 
@@ -108,6 +109,17 @@ def simpan_dokumen_bermasalah(df):
     except Exception as e:
         st.error(f"❌ Gagal menyimpan ke Google Drive: {e}")
         return False
+
+@st.cache_data(ttl=300)  
+def load_vpu_dari_gdrive():
+    try:
+        df = pd.read_excel(VPU_DRIVE_URL)
+        if df.empty:
+            return None
+        return df
+    except Exception as e:
+        st.warning(f"⚠️ Gagal load data VPU: {e}")
+        return None
 
 # =============================
 # FUNGSI UTILITY
@@ -222,6 +234,7 @@ if st.sidebar.button("🚪 Logout"):
 if st.sidebar.button("🔄 Reset ke Data Google Drive"):
     st.session_state.ma_raw = None
     st.session_state.simrs_raw = None
+    st.session_state.vpu_raw = None
     st.session_state.data_source = "drive"
     st.rerun()    
 
@@ -280,6 +293,9 @@ if "ma_raw" not in st.session_state:
 if "simrs_raw" not in st.session_state:
     st.session_state.simrs_raw = None
 
+if "vpu_raw" not in st.session_state:  
+    st.session_state.vpu_raw = None    
+
 if "data_source" not in st.session_state:
     st.session_state.data_source = "drive"
 
@@ -291,10 +307,13 @@ if st.session_state.data_source == "drive" and st.session_state.ma_raw is None:
         with st.spinner("📂 Memuat data dari Google Drive..."):
             st.session_state.ma_raw = pd.read_excel(MA_DRIVE_URL)
             st.session_state.simrs_raw = pd.read_excel(SIMRS_DRIVE_URL)
+            
+            # Load VPU pakai gspread
+            st.session_state.vpu_raw = load_vpu_dari_gdrive()
+            
         st.success("📂 Data default dimuat dari Google Drive")
     except Exception as e:
         st.error(f"❌ Gagal memuat data dari Google Drive: {e}")
-        st.info("💡 Silakan upload data manual menggunakan sidebar")
         st.stop()
 
 # =============================
@@ -323,6 +342,36 @@ except Exception as e:
     st.stop()
 
 # =============================
+# BACA DATA VPU (VLOOKUP)
+# =============================
+vpu_lookup = {}  # Default kosong
+
+if st.session_state.vpu_raw is not None:
+    try:
+        vpu_raw = st.session_state.vpu_raw
+        
+        # Kolom D = index 3 = No. Voucher (KEY)
+        # Kolom N = index 13 = Keterangan Keperluan (VALUE)
+        vpu_df = pd.DataFrame({
+            "no_voucher": vpu_raw.iloc[:, 3].astype(str).str.strip(),
+            "keterangan_vpu": vpu_raw.iloc[:, 13].astype(str).str.strip()
+        })
+        
+        # Filter hanya yang berawalan VPU
+        vpu_df = vpu_df[vpu_df["no_voucher"].str.upper().str.startswith("VPU")]
+        
+        # Replace "nan" dengan kosong
+        vpu_df["keterangan_vpu"] = vpu_df["keterangan_vpu"].replace("nan", "")
+        
+        # Buat dictionary untuk lookup
+        # Key: No. Voucher, Value: Keterangan
+        vpu_lookup = dict(zip(vpu_df["no_voucher"], vpu_df["keterangan_vpu"]))
+        
+    except Exception as e:
+        st.warning(f"⚠️ Gagal memuat data VPU: {e}")
+        vpu_lookup = {}
+
+# =============================
 # BACA SIMRS
 # =============================
 simrs_raw = st.session_state.simrs_raw
@@ -344,8 +393,13 @@ try:
         lambda x: pd.Series(parse_kode_ma(x))
     )
     simrs["pengendali"] = simrs["kode_pengendali"].map(PENGENDALI_MAP)
-
     simrs["bulan"] = simrs["tanggal"].dt.to_period("M").astype(str)
+    
+    # VLOOKUP VPU
+    simrs["keterangan_vpu"] = simrs["no_transaksi"].astype(str).str.strip().map(
+        lambda x: vpu_lookup.get(x, "") if x.upper().startswith("VPU") else ""
+    )
+
 except Exception as e:
     st.error(f"❌ Gagal memproses data SIMRS: {e}")
     st.stop()
@@ -1001,17 +1055,65 @@ if st.session_state.active_tab == "tab2":
             .str.contains(f_no_spk, case=False, na=False)
         ]
 
-    # ===== TABEL FORMATTED (DEFAULT) =====
+# ===== TABEL FORMATTED (DEFAULT) =====
     st.markdown("### 📊 Tabel Laporan SIMRS")
     
     data_formatted = data.copy()
     data_formatted["tanggal"] = data_formatted["tanggal"].dt.strftime("%Y-%m-%d")
     data_formatted["nilai"] = data_formatted["nilai"].apply(format_rp)
 
+    # Kolom yang ditampilkan
+    kolom_tampil = ["tanggal", "kepada", "no_transaksi", "nama_anggaran", 
+                    "kode_ma", "no_spk", "nilai", "pengendali"]
+    
+    if "keterangan_vpu" in data_formatted.columns:
+        kolom_tampil.append("keterangan_vpu")
+
     st.dataframe(
-        data_formatted[["tanggal", "kepada", "no_transaksi", "nama_anggaran", "kode_ma", "no_spk", "nilai", "pengendali"]],
-        use_container_width=True
+        data_formatted[kolom_tampil],
+        use_container_width=True,
+        column_config={
+            "tanggal": st.column_config.TextColumn(
+                "Tanggal",
+                width="small"
+            ),
+            "kepada": st.column_config.TextColumn(
+                "Kepada",
+                width="medium"
+            ),
+            "no_transaksi": st.column_config.TextColumn(
+                "No. Transaksi",
+                width="medium"
+            ),
+            "nama_anggaran": st.column_config.TextColumn(
+                "Nama Anggaran",
+                width="medium"
+            ),
+            "kode_ma": st.column_config.TextColumn(
+                "Kode MA",
+                width="small"
+            ),
+            "no_spk": st.column_config.TextColumn(
+                "No. SPK",
+                width="small"
+            ),
+            "nilai": st.column_config.TextColumn(
+                "Nilai",
+                width="small"
+            ),
+            "pengendali": st.column_config.TextColumn(
+                "Pengendali",
+                width="medium"
+            ),
+            "keterangan_vpu": st.column_config.TextColumn(
+                "Keterangan VPU",
+                width="large",
+                help="💡 Hover pada sel untuk membaca keterangan lengkap"  # ← TOOLTIP HEADER
+            )
+        },
+        height=400
     )
+    st.caption("💡 **Tip:** Hover pada kolom **Keterangan VPU** untuk membaca teks lengkap | Scroll kanan jika perlu")
 
     # ===== TABEL SORTABLE (COLLAPSIBLE) =====
     with st.expander("🔢 Lihat Tabel Sortable (Angka Mentah untuk Sorting)"):
@@ -1029,6 +1131,16 @@ if st.session_state.active_tab == "tab2":
             "kode_ma", "no_spk", "nilai", "pengendali"
         ]].copy()
         
+        # Tambahkan keterangan_vpu ke sortable table
+        kolom_sortable = ["tanggal", "kepada", "no_transaksi", "nama_anggaran",
+                         "kode_ma", "no_spk", "nilai", "pengendali"]
+        
+        if "keterangan_vpu" in data.columns:
+            kolom_sortable.append("keterangan_vpu")
+        
+        data_sortable = data[kolom_sortable].copy()
+        data_sortable["tanggal"] = data_sortable["tanggal"].dt.strftime("%Y-%m-%d")
+        
         data_sortable = data_sortable.rename(columns={
             "tanggal": "Tanggal",
             "kepada": "Kepada",
@@ -1037,7 +1149,8 @@ if st.session_state.active_tab == "tab2":
             "kode_ma": "Kode MA",
             "no_spk": "No. SPK",
             "nilai": "Nilai (Rp)",
-            "pengendali": "Pengendali"
+            "pengendali": "Pengendali",
+            "keterangan_vpu": "Keterangan VPU"
         })
         
         st.dataframe(
@@ -1861,145 +1974,3 @@ if st.session_state.active_tab == "tab3":
                 selesai = status_count.get('SELESAI', 0)
                 st.metric("✅ Sudah Selesai", selesai)
 
-# ======================================================
-# TAB 4 – ANALISA ANGGARAN
-# ======================================================
-if st.session_state.active_tab == "tab4":
-    st.subheader("📈 Analisa Capaian per Mata Anggaran")
-    
-    # Filter data: HANYA dokumen dengan nilai > 0 (tidak batal)
-    simrs_aktif = simrs[simrs["nilai"] > 0].copy()
-    
-    # Ambil unique mata anggaran yang punya transaksi
-    anggaran_list = sorted(simrs_aktif["nama_anggaran"].dropna().unique())
-    
-    if len(anggaran_list) == 0:
-        st.warning("⚠️ Tidak ada data transaksi aktif")
-    else:
-        # Dropdown pilih mata anggaran
-        selected_anggaran = st.selectbox(
-            "Pilih Mata Anggaran:",
-            anggaran_list,
-            key="select_anggaran_tab4"
-        )
-        
-        # Filter data anggaran terpilih
-        data_anggaran = simrs_aktif[simrs_aktif["nama_anggaran"] == selected_anggaran]
-        
-        # Ambil kode MA untuk cari pagu
-        kode_ma_anggaran = data_anggaran["kode_ma"].iloc[0]
-        
-        # Cari pagu dari ma
-        pagu_tahunan = ma[ma["kode_ma"] == kode_ma_anggaran]["pagu"].sum()
-        
-        # Agregasi per bulan
-        bulanan_anggaran = data_anggaran.groupby("bulan").agg(
-            capaian=("nilai", "sum"),
-            jumlah_dok=("nilai", "count")
-        ).reset_index()
-        
-        # Hitung persentase dari pagu tahunan
-        bulanan_anggaran["persen_tahunan"] = (bulanan_anggaran["capaian"] / pagu_tahunan * 100).round(2)
-        
-        # Total
-        total_capaian = bulanan_anggaran["capaian"].sum()
-        total_dok = bulanan_anggaran["jumlah_dok"].sum()
-        total_persen = (total_capaian / pagu_tahunan * 100) if pagu_tahunan > 0 else 0
-        
-        # Info Summary
-        st.markdown("---")
-        col_info1, col_info2, col_info3 = st.columns(3)
-        
-        with col_info1:
-            st.metric("💰 Pagu Tahunan", f"Rp {format_rp(pagu_tahunan)}")
-        
-        with col_info2:
-            st.metric("✅ Total Capaian", f"Rp {format_rp(total_capaian)}")
-        
-        with col_info3:
-            # Warna berdasarkan persentase
-            if total_persen >= 100:
-                delta_color = "off"
-            elif total_persen >= 70:
-                delta_color = "normal"
-            else:
-                delta_color = "normal"
-            st.metric("📊 Persentase Capaian", f"{total_persen:.1f}%")
-        
-        st.caption(f"📄 Total Dokumen: **{total_dok}** transaksi (dokumen batal tidak dihitung)")
-        
-        # Tabel Detail per Bulan
-        st.markdown("---")
-        st.markdown("### 📋 Detail per Bulan")
-        
-        # Format tabel
-        tabel_detail = bulanan_anggaran.copy()
-        tabel_detail["capaian_fmt"] = tabel_detail["capaian"].apply(format_rp)
-        tabel_detail["persen_fmt"] = tabel_detail["persen_tahunan"].apply(lambda x: f"{x:.2f}%")
-        
-        # Tambahkan emoji indicator
-        def get_indicator(persen):
-            if persen >= 100:
-                return "🔴"
-            elif persen >= 70:
-                return "🟡"
-            else:
-                return "🟢"
-        
-        tabel_detail["indicator"] = tabel_detail["persen_tahunan"].apply(get_indicator)
-        
-        # Tampilkan tabel
-        tabel_tampil = tabel_detail[["bulan", "capaian_fmt", "jumlah_dok", "persen_fmt", "indicator"]].rename(columns={
-            "bulan": "Bulan",
-            "capaian_fmt": "Capaian (Rp)",
-            "jumlah_dok": "Jumlah Dokumen",
-            "persen_fmt": "% dari Pagu Tahunan",
-            "indicator": "Status"
-        })
-        
-        # Tambahkan baris total
-        total_row = pd.DataFrame([{
-            "Bulan": "TOTAL",
-            "Capaian (Rp)": format_rp(total_capaian),
-            "Jumlah Dokumen": total_dok,
-            "% dari Pagu Tahunan": f"{total_persen:.2f}%",
-            "Status": get_indicator(total_persen)
-        }])
-        
-        tabel_final = pd.concat([tabel_tampil, total_row], ignore_index=True)
-        
-        st.dataframe(
-            tabel_final,
-            use_container_width=True,
-            hide_index=True
-        )
-        
-        # Grafik Trend Horizontal
-        st.markdown("---")
-        st.markdown("### 📈 Grafik Trend Capaian")
-        
-        # Chart dengan Altair - HORIZONTAL BAR
-        chart_trend = alt.Chart(bulanan_anggaran).mark_bar(color="#4472C4", size=40).encode(
-            x=alt.X("capaian:Q", title="Capaian (Rp)", axis=alt.Axis(format=",.0f")),
-            y=alt.Y("bulan:N", title="Bulan", sort=None, axis=alt.Axis(labelFontSize=14)),
-            tooltip=[
-                alt.Tooltip("bulan:N", title="Bulan"),
-                alt.Tooltip("capaian:Q", title="Capaian", format=",.0f"),
-                alt.Tooltip("jumlah_dok:Q", title="Jumlah Dokumen"),
-                alt.Tooltip("persen_tahunan:Q", title="% dari Pagu", format=".2f")
-            ]
-        ).properties(
-            height=max(300, 80 * len(bulanan_anggaran)),  # Minimal 300px, atau 80px per bulan
-            width=700
-        )
-
-        st.altair_chart(chart_trend, use_container_width=True)
-        
-        # Download button
-        st.download_button(
-            "⬇️ Download Detail Anggaran (Excel)",
-            data=export_excel_single(tabel_final, "Analisa_Anggaran"),
-            file_name=f"analisa_{selected_anggaran.replace('/', '_')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_analisa_tab4"
-        )
