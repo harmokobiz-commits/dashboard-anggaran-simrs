@@ -1030,6 +1030,13 @@ if st.session_state.active_tab == "tab2":
             key="filter_no_spk_tab2"
         )
 
+        f_keterangan_vpu = st.text_input(
+            "🔍 Cari Keterangan VPU",
+            placeholder="Ketik kata kunci keterangan VPU...",
+            help="Cari berdasarkan isi keterangan VPU",
+            key="filter_keterangan_vpu_tab2"
+        )
+
     # =============================
     # TERAPKAN FILTER
     # =============================
@@ -1053,6 +1060,13 @@ if st.session_state.active_tab == "tab2":
             data["no_spk"]
             .astype(str)
             .str.contains(f_no_spk, case=False, na=False)
+        ]
+
+    if f_keterangan_vpu:
+        data = data[
+            data["keterangan_vpu"]
+            .astype(str)
+            .str.contains(f_keterangan_vpu, case=False, na=False)
         ]
 
 # ===== TABEL FORMATTED (DEFAULT) =====
