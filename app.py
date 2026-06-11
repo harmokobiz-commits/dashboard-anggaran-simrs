@@ -723,21 +723,25 @@ if st.session_state.active_tab == "tab1":
         # Toggle mode tampilan
         mode_tampilan = st.radio(
             "Mode Tampilan:",
-            ["📊 Ringkasan (8 Chart)", "🔍 Detail per Pengendali"],
+            ["📊 Ringkasan", "🔍 Detail per Pengendali"],
             horizontal=True,
             key="mode_chart_tab1"
         )
         
-        if mode_tampilan == "📊 Ringkasan (8 Chart)":
-            # MODE RINGKASAN - 8 Chart Kecil
-            st.caption("💡 Tip: Klik chart untuk melihat detail lebih besar")
+        if mode_tampilan == "📊 Ringkasan":
+            # MODE RINGKASAN - Chart per Pengendali (otomatis sesuai jumlah)
+            jumlah_pengendali = len(daftar_pengendali)
+            jumlah_kolom = 4
+            jumlah_baris = -(-jumlah_pengendali // jumlah_kolom)  # Ceiling division
             
-            # Buat 2 baris x 4 kolom
-            for row in range(2):
-                cols = st.columns(4)
+            st.caption(f"💡 Tip: Menampilkan {jumlah_pengendali} pengendali | Klik chart untuk detail")
+            
+            # Buat baris dinamis sesuai jumlah pengendali
+            for row in range(jumlah_baris):
+                cols = st.columns(jumlah_kolom)
                 for col_idx, col in enumerate(cols):
-                    pengendali_idx = row * 4 + col_idx
-                    if pengendali_idx < len(daftar_pengendali):
+                    pengendali_idx = row * jumlah_kolom + col_idx
+                    if pengendali_idx < jumlah_pengendali:
                         pengendali_nama = daftar_pengendali[pengendali_idx]
                         
                         with col:
