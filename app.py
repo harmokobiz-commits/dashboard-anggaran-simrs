@@ -41,7 +41,7 @@ PENGENDALI_MAP = {
 # URL GOOGLE DRIVE
 # =============================
 MA_DRIVE_URL = "https://docs.google.com/spreadsheets/d/15StwZUyvQ7jhkVE97sL6tSO5z3UPXk0-/export?format=xlsx"
-SIMRS_DRIVE_URL = "https://docs.google.com/spreadsheets/d/1dS9ukqE-epEapvaAySZEuyyhYkZsBsxF/export?format=xlsx"
+SIMRS_DRIVE_URL = "https://docs.google.com/spreadsheets/d/1dS9ukqE-epEapvaAySZEuyyhYkZsBsxF/export?format=xlsx&gid=332941727"
 VPU_DRIVE_URL = "https://docs.google.com/spreadsheets/d/1dS9ukqE-epEapvaAySZEuyyhYkZsBsxF/export?format=xlsx&gid=1400931617"
 VERIFIKASI_DRIVE_URL = "https://docs.google.com/spreadsheets/d/1qhw5rS_dXNpcqzuOOQqdCQSvIhC1mAb1YC0Un_zf8_c/export?format=xlsx"
 VERIFIKASI_FILE_ID = "1qhw5rS_dXNpcqzuOOQqdCQSvIhC1mAb1YC0Un_zf8_c"
@@ -150,16 +150,46 @@ def export_excel_single(df, sheet_name="Sheet1"):
 
 def normalisasi_angka(series):
     """Konversi format angka Indonesia ke float"""
-    return (
-        series.astype(str)
-        .str.replace(" ", "", regex=False)  # ← TAMBAH INI: Hapus spasi
-        .str.replace(".", "", regex=False)
-        .str.replace(",", ".", regex=False)
-        .str.replace("-", "0", regex=False)
-        .str.strip()
-        .replace("", "0")
-        .astype(float)
-    )
+    def convert_single(val):
+        try:
+            # Jika sudah numeric (int/float dari Excel), langsung return
+            if isinstance(val, (int, float)):
+                return float(val)
+            
+            val = str(val).strip()
+            
+            if val in ("", "nan", "None", "-"):
+                return 0.0
+            
+            # Cek apakah format Indonesia (titik sebagai pemisah ribuan)
+            # Contoh: "239.999.893" atau "1.234.567,89"
+            if val.count(".") > 1:
+                # Lebih dari 1 titik = format Indonesia (titik = pemisah ribuan)
+                val = val.replace(".", "").replace(",", ".")
+            elif val.count(".") == 1 and val.count(",") == 1:
+                # Ada titik DAN koma = format Indonesia
+                # Contoh: "1.234,56"
+                val = val.replace(".", "").replace(",", ".")
+            elif val.count(",") > 1:
+                # Lebih dari 1 koma = format dengan koma sebagai pemisah ribuan
+                val = val.replace(",", "")
+            elif val.count(".") == 1:
+                # Hanya 1 titik = desimal biasa (misal: 239999893.0)
+                # Biarkan saja
+                pass
+            elif val.count(",") == 1:
+                # Hanya 1 koma = desimal Indonesia (misal: 239999893,0)
+                val = val.replace(",", ".")
+            
+            # Hapus spasi dan karakter non-numerik (kecuali titik dan minus)
+            val = val.replace(" ", "")
+            
+            return float(val)
+            
+        except (ValueError, TypeError):
+            return 0.0
+    
+    return series.apply(convert_single)
 
 def format_rp(x):
     """Format angka ke Rupiah"""
@@ -302,15 +332,15 @@ if "data_source" not in st.session_state:
 # =============================
 # LOAD DATA DEFAULT (GOOGLE DRIVE)
 # =============================
-if st.session_state.data_source == "drive" and st.session_state.ma_raw is None:
+if st.session_state.data_source == "drive" and (
+    st.session_state.ma_raw is None or 
+    st.session_state.simrs_raw is None
+):
     try:
         with st.spinner("📂 Memuat data dari Google Drive..."):
             st.session_state.ma_raw = pd.read_excel(MA_DRIVE_URL)
             st.session_state.simrs_raw = pd.read_excel(SIMRS_DRIVE_URL)
-            
-            # Load VPU pakai gspread
             st.session_state.vpu_raw = load_vpu_dari_gdrive()
-            
         st.success("📂 Data default dimuat dari Google Drive")
     except Exception as e:
         st.error(f"❌ Gagal memuat data dari Google Drive: {e}")
@@ -323,17 +353,15 @@ ma_raw = st.session_state.ma_raw
 
 try:
     ma = pd.DataFrame({
-        "status_hapus": ma_raw.iloc[:, 1],  # ← TAMBAH INI (Kolom B = index 1)
+        "status_hapus": ma_raw.iloc[:, 1],
         "kode_dana": ma_raw.iloc[:, 2],
         "kode_ma": ma_raw.iloc[:, 3],
         "uraian": ma_raw.iloc[:, 5],
         "pagu": normalisasi_angka(ma_raw.iloc[:, 7]),
     })
-    
     ma[["kode_anggaran", "kode_pengendali"]] = ma["kode_ma"].apply(
         lambda x: pd.Series(parse_kode_ma(x))
     )
-
     ma["pengendali"] = ma["kode_pengendali"].map(PENGENDALI_MAP)
     ma["key"] = ma["kode_ma"].astype(str).str.strip()
     ma = ma.dropna(subset=["kode_anggaran", "kode_pengendali"])
@@ -344,29 +372,18 @@ except Exception as e:
 # =============================
 # BACA DATA VPU (VLOOKUP)
 # =============================
-vpu_lookup = {}  # Default kosong
+vpu_lookup = {}
 
 if st.session_state.vpu_raw is not None:
     try:
         vpu_raw = st.session_state.vpu_raw
-        
-        # Kolom D = index 3 = No. Voucher (KEY)
-        # Kolom N = index 13 = Keterangan Keperluan (VALUE)
         vpu_df = pd.DataFrame({
             "no_voucher": vpu_raw.iloc[:, 3].astype(str).str.strip(),
             "keterangan_vpu": vpu_raw.iloc[:, 13].astype(str).str.strip()
         })
-        
-        # Filter hanya yang berawalan VPU
         vpu_df = vpu_df[vpu_df["no_voucher"].str.upper().str.startswith("VPU")]
-        
-        # Replace "nan" dengan kosong
         vpu_df["keterangan_vpu"] = vpu_df["keterangan_vpu"].replace("nan", "")
-        
-        # Buat dictionary untuk lookup
-        # Key: No. Voucher, Value: Keterangan
         vpu_lookup = dict(zip(vpu_df["no_voucher"], vpu_df["keterangan_vpu"]))
-        
     except Exception as e:
         st.warning(f"⚠️ Gagal memuat data VPU: {e}")
         vpu_lookup = {}
@@ -386,7 +403,6 @@ try:
         "no_spk": simrs_raw.iloc[:, 7],
         "nilai": normalisasi_angka(simrs_raw.iloc[:, 8]),
     })
-
     simrs = simrs.dropna(subset=["kode_ma"])
     simrs["key"] = simrs["kode_ma"].astype(str).str.strip()
     simrs[["kode_anggaran", "kode_pengendali"]] = simrs["kode_ma"].apply(
@@ -394,12 +410,10 @@ try:
     )
     simrs["pengendali"] = simrs["kode_pengendali"].map(PENGENDALI_MAP)
     simrs["bulan"] = simrs["tanggal"].dt.to_period("M").astype(str)
-    
-    # VLOOKUP VPU
     simrs["keterangan_vpu"] = simrs["no_transaksi"].astype(str).str.strip().map(
         lambda x: vpu_lookup.get(x, "") if x.upper().startswith("VPU") else ""
     )
-
+    
 except Exception as e:
     st.error(f"❌ Gagal memproses data SIMRS: {e}")
     st.stop()
@@ -1069,7 +1083,7 @@ if st.session_state.active_tab == "tab2":
             .str.contains(f_keterangan_vpu, case=False, na=False)
         ]
 
-# ===== TABEL FORMATTED (DEFAULT) =====
+    # ===== TABEL FORMATTED (DEFAULT) =====
     st.markdown("### 📊 Tabel Laporan SIMRS")
     
     data_formatted = data.copy()
@@ -1987,4 +2001,3 @@ if st.session_state.active_tab == "tab3":
             with col_stat2:
                 selesai = status_count.get('SELESAI', 0)
                 st.metric("✅ Sudah Selesai", selesai)
-
